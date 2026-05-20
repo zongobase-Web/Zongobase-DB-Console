@@ -1,0 +1,6 @@
+{
+  "name": "ZongoBase DB Console",
+  "description": "An iconic, real-time, self-hosted backend-as-a-service manager for databases, indexes, authentication, cloud functions, storage, and API keys.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
