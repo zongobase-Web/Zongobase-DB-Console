@@ -44,6 +44,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [infoMsg, setInfoMsg] = useState("");
+  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
 
   // Verification Code State (Used ONLY for local/mock fallback accounts bypass logs)
   const [verificationCode, setVerificationCode] = useState("");
@@ -246,8 +247,11 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
     } catch (err: any) {
       console.error("Google login error:", err);
       // Give extremely helpful advice for sandboxed iframe environments
-      if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request" || err.message?.includes("cross-origin")) {
-        setErrorMsg("Sandbox Limitation: Google sign-in popups are blocked by your browser inside the iframe. Please click 'Open in a New Tab' at the top right of the screen or use the 'Expert Seeded Signatures' below for instant bypass!");
+      if (err.code === "auth/unauthorized-domain" || err.message?.includes("unauthorized-domain") || err.message?.includes("unauthorized domain")) {
+        setUnauthorizedDomain(window.location.hostname);
+        setErrorMsg(`Firebase Authorized Domain Restricted: Google login was initiated from a domain not yet whitelisted in your Firebase configuration.`);
+      } else if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request" || err.message?.includes("cross-origin")) {
+        setErrorMsg("Sandbox Limitation: Google sign-in popups are blocked inside the iframe layout. Click 'Open in a New Tab' at the top right of the screen or use standard credentials.");
       } else {
         setErrorMsg(err.message || "Google Authenticator flow interrupted.");
       }
@@ -434,10 +438,38 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0 }}
-                  className="p-3.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-200 text-xs flex gap-2.5 items-start"
+                  className="p-3.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-200 text-xs flex flex-col gap-2"
                 >
-                  <CircleAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span>{errorMsg}</span>
+                  <div className="flex gap-2.5 items-start">
+                    <CircleAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+
+                  {unauthorizedDomain && (
+                    <div className="mt-2.5 p-3 rounded-lg bg-slate-900 border border-amber-500/30 text-slate-300 space-y-2 text-left font-sans">
+                      <div className="flex items-center gap-1.5 text-amber-400 font-mono text-[9px] uppercase font-bold">
+                        <Shield className="w-3.5 h-3.5 text-amber-400" />
+                        <span>How to fix: Authorize Domain in Firebase</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-400">
+                        Google OAuth prevents authentication flows from domains that aren't specifically whitelisted. Let's fix this in 3 quick steps:
+                      </p>
+                      <ol className="list-decimal list-inside text-[10.5px] space-y-1 text-slate-300 font-sans pl-1">
+                        <li>
+                          Open your <a href="https://console.firebase.google.com/project/zongobase-83236/authentication/providers" target="_blank" rel="noreferrer" className="text-amber-400 underline hover:text-amber-300 inline font-semibold">Firebase Console Settings</a>.
+                        </li>
+                        <li>
+                          Navigate to <strong className="text-slate-200">Authentication</strong> &rarr; <strong className="text-slate-200">Settings</strong> &rarr; <strong className="text-slate-200">Authorized domains</strong>.
+                        </li>
+                        <li>
+                          Click <strong className="text-slate-200">"Add domain"</strong> and paste this exact address:
+                          <div className="my-1.5 flex items-center justify-between bg-[#131416] p-2 rounded border border-slate-750 font-mono text-amber-400 text-xs select-all">
+                            <span>{unauthorizedDomain}</span>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

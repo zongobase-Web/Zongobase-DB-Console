@@ -520,8 +520,8 @@ export default function App() {
         <div className="flex flex-col flex-1 overflow-y-auto">
           <div className="p-8 pb-4">
             <h1 className="text-xl font-sans tracking-tight font-extrabold text-white flex items-center gap-2 cursor-pointer select-none" onClick={() => navigateTab('dashboard')}>
-              <div className="w-7 h-7 rounded-lg bg-[#1e1f20] border border-[#2d2f31] flex items-center justify-center relative">
-                <Sparkles className="w-4 h-4 text-[#8ab4f8]" />
+              <div className="w-8 h-8 rounded-lg bg-[#1e1f20] border border-amber-500/30 flex items-center justify-center relative font-mono text-xs text-amber-500 font-extrabold shadow-[0_0_10px_rgba(245,158,11,0.1)]">
+                ZB
               </div>
               <span>Zongo<span className="bg-gradient-to-r from-[#4285f4] via-[#9b51e0] to-[#e040fb] bg-clip-text text-transparent">Base</span></span>
             </h1>
