@@ -10,11 +10,23 @@ export interface Collection {
   description: string;
   documents: DatabaseDoc[];
   indexes: string[];
+  ownerId?: string; // Scopes collection to local developer users (null/undefined = Admin/Global)
+}
+
+export interface WebProject {
+  id: string;
+  name: string;
+  domainUrl: string;
+  description: string;
+  apiKey: string;
+  ownerId: string; // References AuthUser.id
+  createdAt: string;
 }
 
 export interface AuthUser {
   id: string;
   email: string;
+  password?: string; // Password support for live logging
   displayName: string;
   role: 'admin' | 'user' | 'anonymous';
   status: 'active' | 'suspended';
@@ -63,3 +75,13 @@ export interface RealtimeConnection {
   userAgent: string;
   connectedAt: string;
 }
+
+export interface DevMessage {
+  id: string;
+  senderEmail: string;
+  senderName: string;
+  subject: string;
+  text: string;
+  createdAt: string;
+}
+

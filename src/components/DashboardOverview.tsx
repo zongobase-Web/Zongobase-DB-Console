@@ -1,5 +1,5 @@
 import React from 'react';
-import { Collection, AuthUser, StorageFile, CloudFunction, ZongoLog, APIKey } from '../types';
+import { Collection, AuthUser, StorageFile, CloudFunction, ZongoLog, APIKey, DevMessage } from '../types';
 import { Database, Users, HardDrive, Cpu, ShieldAlert, Wifi, Terminal, Clock, Activity } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -10,6 +10,7 @@ interface Props {
   functions: CloudFunction[];
   apiKeys: APIKey[];
   logs: ZongoLog[];
+  messages: DevMessage[];
   isConnected: boolean;
   onClearLogs: () => void;
   setActiveTab: (tab: string) => void;
@@ -22,6 +23,7 @@ export default function DashboardOverview({
   functions,
   apiKeys,
   logs,
+  messages,
   isConnected,
   onClearLogs,
   setActiveTab
@@ -221,6 +223,43 @@ export default function DashboardOverview({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Developer Feedback / Incoming Workspace Messages */}
+      <div className="p-6 rounded-2xl border border-slate-800 bg-[#161719]/90 space-y-4">
+        <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded bg-cyan-400 animate-pulse" />
+          <span>📩 Received Developer Messages ({messages?.length || 0})</span>
+        </h2>
+        
+        {(!messages || messages.length === 0) ? (
+          <div className="py-6 text-center text-xs text-slate-500 font-sans">
+            No secure customer messages on workspace queues currently.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {messages.map((msg) => (
+              <div key={msg.id} className="p-4 bg-slate-950/50 border border-slate-850 rounded-xl space-y-2 relative text-left">
+                <span className="absolute top-4 right-4 text-[9px] text-slate-550 font-mono">
+                  {new Date(msg.createdAt).toLocaleDateString()}
+                </span>
+                <div className="flex items-center gap-1.5 text-[10px] text-cyan-400 font-mono font-bold uppercase tracking-wider">
+                  <span>From: {msg.senderName}</span>
+                  <span className="text-slate-600">|</span>
+                  <a href={`mailto:${msg.senderEmail}`} className="text-slate-400 hover:text-cyan-400 underline lowercase font-sans">
+                    {msg.senderEmail}
+                  </a>
+                </div>
+                <h4 className="text-xs font-bold text-slate-200 mt-1">
+                  Topic: {msg.subject}
+                </h4>
+                <p className="text-[11px] text-slate-400 whitespace-pre-wrap leading-relaxed font-sans bg-slate-900/30 p-2.5 rounded border border-[#2d2f31]/40">
+                  {msg.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

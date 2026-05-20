@@ -40,7 +40,7 @@ export default function DatabaseManager({
   const [newIndexField, setNewIndexField] = useState('');
   
   // Gemini States
-  const [aiPrompt, setAiPrompt] = useState('Build a collection called electronic_gadgets with 3 products including price, stock, brand, and reviews count');
+  const [aiPrompt, setAiPrompt] = useState('');
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiResult, setAiResult] = useState<any[] | null>(null);
   const [aiProposedName, setAiProposedName] = useState('electronic_gadgets');
@@ -448,7 +448,7 @@ export default function DatabaseManager({
                 <div className="p-12 text-center text-slate-500 space-y-2">
                   <HelpCircle className="w-8 h-8 stroke-[1] mx-auto opacity-40 text-slate-400" />
                   <p className="text-xs font-semibold text-slate-400">Database collection empty</p>
-                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">Click "Insert Document" at the top-right, or prompt the Gemini Schema Architect to populate electronic arrays.</p>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">Click "Insert Document" at the top-right, or use the Schema Architect to populate your datastore tables.</p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">

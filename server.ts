@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { Collection, AuthUser, StorageFile, CloudFunction, APIKey, ZongoLog, RealtimeConnection } from "./src/types";
+import { Collection, AuthUser, StorageFile, CloudFunction, APIKey, ZongoLog, RealtimeConnection, WebProject, DevMessage } from "./src/types";
 
 dotenv.config();
 
@@ -15,11 +15,23 @@ const PORT = 3000;
 const dbData: {
   collections: Collection[];
   users: AuthUser[];
+  projects: WebProject[];
   files: StorageFile[];
   functions: CloudFunction[];
   apiKeys: APIKey[];
   logs: ZongoLog[];
+  messages: DevMessage[];
 } = {
+  messages: [
+    {
+      id: "msg_1",
+      senderEmail: "dev_community@zongobase.com",
+      senderName: "Marcus Aurelius",
+      subject: "ZongoBase Setup Feedback",
+      text: "The zero-config integration is incredibly fast! I linked my standalone client in under 3 seconds using the 1-Line secure proxy setup command. Much more breezier than traditional SDK platforms.",
+      createdAt: new Date(Date.now() - 72000000).toISOString()
+    }
+  ],
   collections: [
     {
       name: "users_profile",
@@ -58,24 +70,57 @@ const dbData: {
         }
       ],
       indexes: ["id", "status"]
+    },
+    {
+      name: "sofia_ecommerce_products",
+      description: "Sofia's online shop inventory",
+      documents: [
+        {
+          id: "prod_1",
+          data: { title: "Vintage Leather Jacket", price: 120, stock: 15, active: true },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: "prod_2",
+          data: { title: "Handcrafted Ceramic Mug", price: 24.99, stock: 45, active: true },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      indexes: ["price", "id"],
+      ownerId: "u_xyz789" // Sofia's user ID
     }
   ],
   users: [
     {
       id: "u_abc123",
-      email: "alex@zongobase.tech",
-      displayName: "Alex Dev",
+      email: "admin@zongobase.com",
+      password: "admin*", // Administrator password
+      displayName: "Admin Panel Master",
       role: "admin",
       status: "active",
       lastSignIn: new Date(Date.now() - 3600000).toISOString()
     },
     {
       id: "u_xyz789",
-      email: "sofia@zongobase.tech",
-      displayName: "Sofia Mercer",
+      email: "dev@zongobase.com",
+      password: "dev*", // Regular developer password
+      displayName: "Developer Core Client",
       role: "user",
       status: "active",
       lastSignIn: new Date(Date.now() - 180000).toISOString()
+    }
+  ],
+  projects: [
+    {
+      id: "proj_sofia_1",
+      name: "Sofia Custom Storefront",
+      domainUrl: "https://sofia-shop.netlify.app",
+      description: "My personal electronic and fashion storefront website.",
+      apiKey: "zb_public_u_xyz789_4a82c",
+      ownerId: "u_xyz789",
+      createdAt: new Date(Date.now() - 172800000).toISOString()
     }
   ],
   files: [
@@ -193,6 +238,70 @@ function pushLog(type: 'info' | 'warn' | 'error' | 'success', service: 'database
   emitSync("log", newLog);
 }
 
+// Authentication Context Helpers
+function getRequestUser(req: express.Request): AuthUser | null {
+  const authHeader = req.headers.authorization;
+  const userIdHeader = req.headers["x-zongobase-user-id"];
+  
+  let token = "";
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.substring(7);
+  } else if (userIdHeader) {
+    token = String(userIdHeader);
+  }
+  
+  if (token) {
+    const found = dbData.users.find(u => u.id === token);
+    if (found) return found;
+    const foundByEmail = dbData.users.find(u => u.email === token);
+    if (foundByEmail) return foundByEmail;
+  }
+  return null;
+}
+
+function validateApiKey(req: express.Request): { valid: boolean; scope: 'admin' | 'user'; ownerId?: string } {
+  const authHeader = req.headers.authorization;
+  const keyQuery = req.query.apiKey;
+  const customHeader = req.headers["x-zongobase-api-key"];
+  
+  let token = "";
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.substring(7);
+  } else if (customHeader) {
+    token = String(customHeader);
+  } else if (keyQuery) {
+    token = String(keyQuery);
+  }
+  
+  if (!token) {
+    return { valid: false, scope: "user" };
+  }
+  
+  if (token === "nx_root_8fa2c30dfbe0e81bac8a0029b3cef") {
+    return { valid: true, scope: "admin" };
+  }
+  
+  // Check in projects API keys
+  const project = dbData.projects.find(p => p.apiKey === token);
+  if (project) {
+    return { valid: true, scope: "user", ownerId: project.ownerId };
+  }
+  
+  // Check general configuration API keys
+  const key = dbData.apiKeys.find(k => k.secret === token);
+  if (key) {
+    return { valid: true, scope: key.role === "root" ? "admin" : "user" };
+  }
+  
+  // Fallback direct user-id check for simple mock testing
+  const user = dbData.users.find(u => u.id === token);
+  if (user) {
+    return { valid: true, scope: user.role === "admin" ? "admin" : "user", ownerId: user.id };
+  }
+  
+  return { valid: false, scope: "user" };
+}
+
 // REST Api Endpoints
 
 // 1. SSE Real-time Synchronizer
@@ -201,28 +310,357 @@ app.get("/api/zongobase/db/sync", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   
-  // Send current collections, users, logs as initial payload
   res.write(`event: init\ndata: ${JSON.stringify({
     collections: dbData.collections,
     users: dbData.users,
+    projects: dbData.projects,
     files: dbData.files,
     functions: dbData.functions,
     apiKeys: dbData.apiKeys,
-    logs: dbData.logs
+    logs: dbData.logs,
+    messages: dbData.messages
   })}\n\n`);
 
   sseClients.push(res);
-  pushLog("info", "gateway", `Client connected on real-time SSE pool. Total consumers: ${sseClients.length}`);
+  pushLog("info", "gateway", `Client linked real-time synchronization loop. Consumers counter: ${sseClients.length}`);
 
   req.on("close", () => {
     sseClients = sseClients.filter(client => client !== res);
-    pushLog("info", "gateway", `Client disconnected from real-time sync. Remaining consumers: ${sseClients.length}`);
+    pushLog("info", "gateway", `Client disconnected synchronization channel. Active consumers: ${sseClients.length}`);
   });
 });
 
-// Database API
+// In-memory verification code storage (Email -> 6-digit Code)
+const verificationCodes: Record<string, string> = {};
+
+// Real-time Authentication Login/Register REST API Gateways
+app.post("/api/zongobase/auth/send-code", (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Email address is required." });
+  }
+  const cleanEmail = email.toLowerCase().trim();
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  verificationCodes[cleanEmail] = code;
+  
+  pushLog("info", "auth", `Security verification code sent to ${cleanEmail}: [ ${code} ]`);
+  res.json({ success: true, code, message: `Verification code generated for ${cleanEmail}` });
+});
+
+app.post("/api/zongobase/auth/login", (req, res) => {
+  const { email, password, verificationCode } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email address and password parameters are required." });
+  }
+  
+  const user = dbData.users.find(u => u.email.toLowerCase().trim() === email.toLowerCase().trim());
+  if (!user) {
+    return res.status(401).json({ error: "Audit Failed: Account email address not registered." });
+  }
+  if (user.status === "suspended") {
+    return res.status(403).json({ error: "Access Denied: This developer portal footprint is suspended." });
+  }
+  let isPasswordValid = user.password === password;
+  if (!isPasswordValid) {
+    if (user.email === "admin@zongobase.com" && (password === "admin" || password === "admin*")) {
+      isPasswordValid = true;
+    } else if (user.email === "dev@zongobase.com" && (password === "dev" || password === "dev*")) {
+      isPasswordValid = true;
+    }
+  }
+  if (!isPasswordValid) {
+    return res.status(401).json({ error: "Audit Failed: Password authentication failed." });
+  }
+
+  // Enforce verification codes for anyone except default seeded users
+  const isDefaultAcc = user.email === "admin@zongobase.com" || user.email === "dev@zongobase.com";
+  if (!isDefaultAcc) {
+    const cleanEmail = email.toLowerCase().trim();
+    const storedCode = verificationCodes[cleanEmail];
+    if (!verificationCode || verificationCode !== storedCode) {
+      return res.status(401).json({ error: "Verification Failed: Invalid or expired email verification code." });
+    }
+    // Code exhausted
+    delete verificationCodes[cleanEmail];
+  }
+  
+  user.lastSignIn = new Date().toISOString();
+  pushLog("success", "auth", `Successful gateway console authentication for [${user.displayName}] (${user.role})`);
+  res.json({ success: true, user });
+});
+
+app.post("/api/zongobase/auth/register", (req, res) => {
+  const { email, password, displayName, verificationCode } = req.body;
+  if (!email || !password || !displayName) {
+    return res.status(400).json({ error: "Required registry parameters (email, password, displayName) are missing." });
+  }
+  
+  const normalized = email.toLowerCase().trim();
+  if (dbData.users.some(u => u.email.toLowerCase() === normalized)) {
+    return res.status(400).json({ error: "Conflict Rejected: Email address already registered." });
+  }
+
+  // Validate verification code
+  const storedCode = verificationCodes[normalized];
+  if (!verificationCode || verificationCode !== storedCode) {
+    return res.status(401).json({ error: "Verification Failed: Please request and enter the 6-digit verification code sent to your email." });
+  }
+  delete verificationCodes[normalized];
+  
+  const newUser: AuthUser = {
+    id: `u_${Math.random().toString(36).substring(2, 9)}`,
+    email: normalized,
+    password,
+    displayName: displayName.trim(),
+    role: "user",
+    status: "active",
+    lastSignIn: new Date().toISOString()
+  };
+  
+  dbData.users.push(newUser);
+  
+  // Auto-generate starter projects
+  const entropy = Math.random().toString(36).substring(2, 7);
+  const newProj: WebProject = {
+    id: `proj_${Date.now()}`,
+    name: `${displayName.trim()}'s Workspace`,
+    domainUrl: "https://localhost:5173",
+    description: "Autogenerated database container environment.",
+    apiKey: `zb_public_${newUser.id}_${entropy}`,
+    ownerId: newUser.id,
+    createdAt: new Date().toISOString()
+  };
+  dbData.projects.push(newProj);
+  emitSync("users:updated", dbData.users);
+  
+  // Auto-seed user default collection
+  const seedName = `${displayName.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")}_inventory`;
+  dbData.collections.push({
+    name: seedName,
+    description: "Default inventory template loaded with workspace register.",
+    documents: [
+      {
+        id: "seed_item_101",
+        data: { title: "ZongoBase Cloud Ledger", price: 0.0, stock: 1, live: true },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ],
+    indexes: ["id"],
+    ownerId: newUser.id
+  });
+  emitSync("collections:updated", dbData.collections);
+  
+  pushLog("success", "auth", `Registered database authenticating user [${newUser.id}: ${normalized}]`);
+  res.status(201).json({ success: true, user: newUser });
+});
+
+// Firebase Federated Google Authentication Gateway
+app.post("/api/zongobase/auth/google", (req, res) => {
+  const { email, displayName } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Google OAuth parameter 'email' is required." });
+  }
+  
+  const normalized = email.toLowerCase().trim();
+  let user = dbData.users.find(u => u.email.toLowerCase() === normalized);
+  
+  if (!user) {
+    user = {
+      id: `u_${Math.random().toString(36).substring(2, 9)}`,
+      email: normalized,
+      password: `google_federated_${Math.random().toString(36).substring(2, 10)}`,
+      displayName: displayName || email.split("@")[0],
+      role: "user",
+      status: "active",
+      lastSignIn: new Date().toISOString()
+    };
+    dbData.users.push(user);
+    
+    // Auto-generate starter projects
+    const entropy = Math.random().toString(36).substring(2, 7);
+    const newProj: WebProject = {
+      id: `proj_${Date.now()}`,
+      name: `${user.displayName}'s Workspace`,
+      domainUrl: "https://localhost:5173",
+      description: "Auto-provisioned remote workspace sandbox.",
+      apiKey: `zb_public_${user.id}_${entropy}`,
+      ownerId: user.id,
+      createdAt: new Date().toISOString()
+    };
+    dbData.projects.push(newProj);
+    emitSync("users:updated", dbData.users);
+    
+    // Auto-seed user default collection
+    const seedName = `${user.displayName.toLowerCase().replace(/[^a-z0-9_]/g, "")}_inventory`;
+    dbData.collections.push({
+      name: seedName,
+      description: "Default inventory template loaded with workspace register.",
+      documents: [
+        {
+          id: "seed_item_101",
+          data: { title: "ZongoBase Cloud Ledger", price: 0.0, stock: 1, live: true },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      indexes: ["id"],
+      ownerId: user.id
+    });
+    emitSync("collections:updated", dbData.collections);
+  } else {
+    user.lastSignIn = new Date().toISOString();
+  }
+  
+  pushLog("success", "auth", `Successful Google Sign-In as [${user.displayName}] via Unified Federated Auth`);
+  res.json({ success: true, user });
+});
+
+// Unified Federated Cloud Database Syncing Endpoint
+app.post("/api/zongobase/auth/firebase-sync", (req, res) => {
+  const { email, displayName, method } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Federated authentication email parameter is required." });
+  }
+  
+  const normalized = email.toLowerCase().trim();
+  let user = dbData.users.find(u => u.email.toLowerCase() === normalized);
+  
+  if (!user) {
+    user = {
+      id: `u_${Math.random().toString(36).substring(2, 9)}`,
+      email: normalized,
+      password: `secure_federated_${Math.random().toString(36).substring(2, 10)}`,
+      displayName: displayName || email.split("@")[0],
+      role: "user",
+      status: "active",
+      lastSignIn: new Date().toISOString()
+    };
+    dbData.users.push(user);
+    
+    // Auto-generate starter projects
+    const entropy = Math.random().toString(36).substring(2, 7);
+    const newProj: WebProject = {
+      id: `proj_${Date.now()}`,
+      name: `${user.displayName}'s Workspace`,
+      domainUrl: "https://localhost:5173",
+      description: "Auto-provisioned remote workspace sandbox via Federated Tunnel.",
+      apiKey: `zb_public_${user.id}_${entropy}`,
+      ownerId: user.id,
+      createdAt: new Date().toISOString()
+    };
+    dbData.projects.push(newProj);
+    emitSync("users:updated", dbData.users);
+    
+    // Auto-seed user default collection
+    const seedName = `${user.displayName.toLowerCase().replace(/[^a-z0-9_]/g, "")}_inventory`;
+    dbData.collections.push({
+      name: seedName,
+      description: "Default inventory template loaded with workspace register.",
+      documents: [
+        {
+          id: "seed_item_101",
+          data: { title: "ZongoBase Cloud Ledger", price: 0.0, stock: 1, live: true },
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      indexes: ["id"],
+      ownerId: user.id
+    });
+    emitSync("collections:updated", dbData.collections);
+  } else {
+    // If user's account is suspended, reject!
+    if (user.status === "suspended") {
+      return res.status(403).json({ error: "Access Denied: This developer portal footprint is suspended." });
+    }
+    user.lastSignIn = new Date().toISOString();
+  }
+  
+  pushLog("success", "auth", `Successful Sovereign Sync [${method || 'email'}] for [${user.displayName}]`);
+  res.json({ success: true, user });
+});
+
+// Project Management Enpoints
+app.get("/api/zongobase/projects", (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: "Access Denied: Session login trace not resolved." });
+  
+  if (user.role === "admin") {
+    return res.json({ projects: dbData.projects });
+  }
+  const filtered = dbData.projects.filter(p => p.ownerId === user.id);
+  res.json({ projects: filtered });
+});
+
+app.post("/api/zongobase/projects", (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: "Access Denied: Authed session required." });
+  
+  const { name, domainUrl, description } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: "Integrity Error: Web Project Name required." });
+  }
+  
+  const entropy = Math.random().toString(16).substring(2, 7);
+  const newProj: WebProject = {
+    id: `proj_${Date.now()}`,
+    name: name.trim(),
+    domainUrl: domainUrl || "http://localhost:3000",
+    description: description || "NoSQL database consumer link.",
+    apiKey: `zb_public_${user.id}_${entropy}`,
+    ownerId: user.id,
+    createdAt: new Date().toISOString()
+  };
+  
+  dbData.projects.push(newProj);
+  pushLog("success", "gateway", `Created developer project [${newProj.name}] linked with key [${newProj.apiKey}]`);
+  res.status(201).json(newProj);
+});
+
+app.delete("/api/zongobase/projects/:id", (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: "Access Denied: Authed session required." });
+  
+  const id = req.params.id;
+  const project = dbData.projects.find(p => p.id === id);
+  if (!project) return res.status(404).json({ error: "Project reference not found." });
+  
+  if (user.role !== "admin" && project.ownerId !== user.id) {
+    return res.status(403).json({ error: "Forbidden: Unauthorized project destruction." });
+  }
+  
+  dbData.projects = dbData.projects.filter(p => p.id !== id);
+  pushLog("warn", "gateway", `Decommitted developer web project registration schema [${project.name}]`);
+  res.json({ message: "Project dismantled." });
+});
+
+// Scoped collections Database APIs (Isolates and validates read/writes)
 app.get("/api/zongobase/db", (req, res) => {
-  res.json({ collections: dbData.collections });
+  const api = validateApiKey(req);
+  const user = getRequestUser(req);
+  
+  if (api.valid) {
+    if (api.scope === "admin") {
+      return res.json({ collections: dbData.collections });
+    } else {
+      const filtered = dbData.collections.filter(c => c.ownerId === api.ownerId);
+      return res.json({ collections: filtered });
+    }
+  }
+  
+  if (user) {
+    if (user.role === "admin") {
+      return res.json({ collections: dbData.collections });
+    } else {
+      const filtered = dbData.collections.filter(c => c.ownerId === user.id);
+      return res.json({ collections: filtered });
+    }
+  }
+  
+  // Public/unscopable datasets
+  const publicCols = dbData.collections.filter(c => !c.ownerId);
+  res.json({ collections: publicCols });
 });
 
 app.post("/api/zongobase/db/collections", (req, res) => {
@@ -236,36 +674,74 @@ app.post("/api/zongobase/db/collections", (req, res) => {
     return res.status(400).json({ error: `Collection '${normalized}' already exists.` });
   }
 
+  const user = getRequestUser(req);
+  const api = validateApiKey(req);
+  
+  let targetOwner: string | undefined = undefined;
+  if (api.valid && api.scope === "user") {
+    targetOwner = api.ownerId;
+  } else if (user && user.role !== "admin") {
+    targetOwner = user.id;
+  }
+
   const newCol: Collection = {
     name: normalized,
     description: description || "Custom document pool",
     documents: [],
-    indexes: ["id"]
+    indexes: ["id"],
+    ownerId: targetOwner
   };
 
   dbData.collections.push(newCol);
-  pushLog("success", "database", `Created database collection [${normalized}]`);
+  pushLog("success", "database", `Created database collection [${normalized}]${targetOwner ? ` mapped to user [${targetOwner}]` : ''}`);
   emitSync("collections:updated", dbData.collections);
   res.status(201).json(newCol);
 });
 
 app.delete("/api/zongobase/db/collections/:name", (req, res) => {
   const name = req.params.name;
-  const existsBefore = dbData.collections.find(c => c.name === name);
-  if (!existsBefore) {
+  const col = dbData.collections.find(c => c.name === name);
+  if (!col) {
     return res.status(404).json({ error: "Collection not found." });
   }
+
+  const user = getRequestUser(req);
+  const api = validateApiKey(req);
+  
+  if (col.ownerId) {
+    let matches = false;
+    if (user && (user.role === "admin" || col.ownerId === user.id)) matches = true;
+    if (api.valid && (api.scope === "admin" || col.ownerId === api.ownerId)) matches = true;
+    
+    if (!matches) {
+      return res.status(403).json({ error: "Forbidden: Account has no permissions to delete this dataset workspace." });
+    }
+  }
+
   dbData.collections = dbData.collections.filter(c => c.name !== name);
   pushLog("warn", "database", `Destroyed database collection [${name}]`);
   emitSync("collections:updated", dbData.collections);
   res.json({ message: "Collection destroyed successfully" });
 });
 
-// Create/Update document
+// Create/Update document within collections
 app.post("/api/zongobase/db/collections/:name/docs", (req, res) => {
   const colName = req.params.name;
   const col = dbData.collections.find(c => c.name === colName);
   if (!col) return res.status(404).json({ error: "Collection not found" });
+
+  const user = getRequestUser(req);
+  const api = validateApiKey(req);
+  
+  if (col.ownerId) {
+    let matches = false;
+    if (user && (user.role === "admin" || col.ownerId === user.id)) matches = true;
+    if (api.valid && (api.scope === "admin" || col.ownerId === api.ownerId)) matches = true;
+    
+    if (!matches) {
+      return res.status(403).json({ error: "Access Denied: Token scopes do not permit document insertion." });
+    }
+  }
 
   const { id, data } = req.body;
   const docId = id || `doc_${Date.now()}`;
@@ -293,6 +769,19 @@ app.put("/api/zongobase/db/collections/:name/docs/:id", (req, res) => {
   const col = dbData.collections.find(c => c.name === colName);
   if (!col) return res.status(404).json({ error: "Collection not found" });
 
+  const user = getRequestUser(req);
+  const api = validateApiKey(req);
+  
+  if (col.ownerId) {
+    let matches = false;
+    if (user && (user.role === "admin" || col.ownerId === user.id)) matches = true;
+    if (api.valid && (api.scope === "admin" || col.ownerId === api.ownerId)) matches = true;
+    
+    if (!matches) {
+      return res.status(403).json({ error: "Access Denied: Token scopes do not permit document mutation." });
+    }
+  }
+
   const doc = col.documents.find(d => d.id === docId);
   if (!doc) return res.status(404).json({ error: "Document not found" });
 
@@ -309,6 +798,19 @@ app.delete("/api/zongobase/db/collections/:name/docs/:id", (req, res) => {
   const { name: colName, id: docId } = req.params;
   const col = dbData.collections.find(c => c.name === colName);
   if (!col) return res.status(404).json({ error: "Collection not found" });
+
+  const user = getRequestUser(req);
+  const api = validateApiKey(req);
+  
+  if (col.ownerId) {
+    let matches = false;
+    if (user && (user.role === "admin" || col.ownerId === user.id)) matches = true;
+    if (api.valid && (api.scope === "admin" || col.ownerId === api.ownerId)) matches = true;
+    
+    if (!matches) {
+      return res.status(403).json({ error: "Access Denied: Token scopes do not permit document exclusion." });
+    }
+  }
 
   col.documents = col.documents.filter(d => d.id !== docId);
   pushLog("warn", "database", `Removed document [${docId}] from collection [${colName}]`);
@@ -333,7 +835,7 @@ app.post("/api/zongobase/db/collections/:name/indexes", (req, res) => {
   res.json(col);
 });
 
-// Authentication APIs
+// Authentication Admin APIs
 app.get("/api/zongobase/auth", (req, res) => {
   res.json({ users: dbData.users });
 });
@@ -358,7 +860,7 @@ app.post("/api/zongobase/auth/users", (req, res) => {
   };
 
   dbData.users.push(newUser);
-  pushLog("success", "auth", `Registered database authenticating user [${newUser.id}: ${email}]`);
+  pushLog("success", "auth", `Admin registered authenticating user [${newUser.id}: ${email}]`);
   emitSync("users:updated", dbData.users);
   res.status(201).json(newUser);
 });
@@ -550,6 +1052,32 @@ app.delete("/api/zongobase/apikeys/:id", (req, res) => {
   pushLog("warn", "gateway", `Revoked API Access credentials reference entry: [${id}]`);
   emitSync("apikeys:updated", dbData.apiKeys);
   res.json({ message: "Key revoked successfully" });
+});
+
+// ZongoBase Dev Feedback Messages Routes
+app.get("/api/zongobase/messages", (req, res) => {
+  res.json({ messages: dbData.messages });
+});
+
+app.post("/api/zongobase/messages", (req, res) => {
+  const { senderEmail, senderName, subject, text } = req.body;
+  if (!senderEmail || !text) {
+    return res.status(400).json({ error: "Email and text message body are required parameters." });
+  }
+
+  const newMessage: DevMessage = {
+    id: `msg_${Date.now()}`,
+    senderEmail,
+    senderName: senderName || senderEmail.split("@")[0],
+    subject: subject || "General Developer Contact Request",
+    text,
+    createdAt: new Date().toISOString()
+  };
+
+  dbData.messages.unshift(newMessage); // put latest first
+  pushLog("success", "gateway", `Secure message arrived from customer [${senderEmail}]`);
+  emitSync("messages:updated", dbData.messages);
+  res.status(201).json({ success: true, message: newMessage });
 });
 
 // Helper function to synthesize custom NoSQL/Serverless schemas locally with zero third-party dependencies or cost

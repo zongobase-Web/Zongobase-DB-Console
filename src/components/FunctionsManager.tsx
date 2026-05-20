@@ -31,7 +31,7 @@ export default function FunctionsManager({
   const [runDuration, setRunDuration] = useState<number | null>(null);
 
   // Gemini states
-  const [aiCodePrompt, setAiCodePrompt] = useState('Create an order validations hook: if amount is negative mock alert and throw error, else compute tax 10% and return detailed tax calculation object');
+  const [aiCodePrompt, setAiCodePrompt] = useState('');
   const [isAiGenerating, setIsAiGenerating] = useState(false);
 
   const activeFn = functions.find(f => f.id === (selectedFn?.id || '')) || functions[0] || null;
@@ -423,7 +423,7 @@ exports.onDatabaseWrite = async (change) => {
           <div className="p-12 text-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/10 text-slate-500 space-y-2">
             <Cpu className="w-10 h-10 stroke-[1.2] mx-auto opacity-40 text-slate-450" />
             <h3 className="text-sm font-semibold text-slate-400">Serverless processor disengaged</h3>
-            <p className="text-xs text-slate-550 max-w-sm mx-auto">Click '+' above to register, preset or prompt the Gemini Code architect to generate database transaction filters.</p>
+            <p className="text-xs text-slate-555 max-w-sm mx-auto">Click '+' above to register, preset templates or use filters to generate database transaction layers.</p>
           </div>
         )}
       </div>
