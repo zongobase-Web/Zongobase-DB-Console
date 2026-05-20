@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "ZongoBaseSystemState": {
+      "title": "ZongoBaseSystemState",
+      "description": "Entire persistent state of the ZongoBase NoSQL engine including collections, users, projects, and functions.",
+      "type": "object",
+      "properties": {
+        "collections": {
+          "type": "array",
+          "description": "Dynamic NoSQL collections defined in the workspace"
+        },
+        "users": {
+          "type": "array",
+          "description": "Registered ZongoBase client users"
+        },
+        "projects": {
+          "type": "array",
+          "description": "Active web projects linked to frontend domains"
+        },
+        "files": {
+          "type": "array",
+          "description": "Storage files metadata"
+        },
+        "functions": {
+          "type": "array",
+          "description": "Dynamic serverless functions and endpoints"
+        },
+        "apiKeys": {
+          "type": "array",
+          "description": "Gateway access tokens"
+        },
+        "logs": {
+          "type": "array",
+          "description": "System transaction event logs"
+        },
+        "messages": {
+          "type": "array",
+          "description": "Developer project messages and telemetry"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["collections", "users", "projects", "files", "functions", "apiKeys", "logs", "messages"]
+    }
+  },
+  "firestore": {
+    "/zongobase_system/{docId}": {
+      "schema": "ZongoBaseSystemState",
+      "description": "The central metadata document maintaining server state"
+    }
+  }
+}

@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { DevMessage } from "../types";
+import { getApiUrl } from "../utils/api";
 
 export default function HelpWizard() {
   // Stepper state
@@ -76,7 +77,7 @@ export default function HelpWizard() {
     setErrorText("");
     
     try {
-      const res = await fetch("/api/zongobase/messages", {
+      const res = await fetch(getApiUrl("/api/zongobase/messages"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

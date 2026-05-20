@@ -3,15 +3,39 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { Collection, AuthUser, StorageFile, CloudFunction, APIKey, ZongoLog, RealtimeConnection, WebProject, DevMessage } from "./src/types";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
+import fs from "fs";
 
 dotenv.config();
 
 const app = express();
 app.use(express.json());
 
+// Enable native CORS configuration for cross-origin Netlify / local deployments
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "*";
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-zongobase-user-id, x-requested-with");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
+
 const PORT = 3000;
 
-// Internal State
+// Root Persistent Firebase integration
+let firebaseConfig: any = null;
+let fbApp: any = null;
+let db: any = null;
+let isDirty = false;
+
+// Internal State declaration
 const dbData: {
   collections: Collection[];
   users: AuthUser[];
@@ -213,6 +237,76 @@ exports.onDatabaseWrite = async (change) => {
   ]
 };
 
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const configContent = fs.readFileSync(configPath, "utf8");
+    firebaseConfig = JSON.parse(configContent);
+    fbApp = initializeApp(firebaseConfig);
+    db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId);
+    console.log("Firebase initialized successfully on Server with databaseId:", firebaseConfig.firestoreDatabaseId);
+  } else {
+    console.log("No config file firebase-applet-config.json found at startup. Running in Local Memory fallback.");
+  }
+} catch (err: any) {
+  console.error("Firebase startup initialization warning:", err.message);
+}
+
+const SYSTEM_DOC_PATH = "zongobase_system";
+const SYSTEM_DOC_ID = "state";
+
+function markDirty() {
+  isDirty = true;
+}
+
+async function loadStateFromFirestore() {
+  if (!db) return;
+  try {
+    const docRef = doc(db, SYSTEM_DOC_PATH, SYSTEM_DOC_ID);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data) {
+        if (Array.isArray(data.collections)) dbData.collections = data.collections;
+        if (Array.isArray(data.users)) dbData.users = data.users;
+        if (Array.isArray(data.projects)) dbData.projects = data.projects;
+        if (Array.isArray(data.files)) dbData.files = data.files;
+        if (Array.isArray(data.functions)) dbData.functions = data.functions;
+        if (Array.isArray(data.apiKeys)) dbData.apiKeys = data.apiKeys;
+        if (Array.isArray(data.logs)) dbData.logs = data.logs;
+        if (Array.isArray(data.messages)) dbData.messages = data.messages;
+        console.log("ZongoBase persistent cloud state successfully hydrated from Firestore.");
+      }
+    } else {
+      console.log("No existing store detected. Seed state created.");
+      await saveStateToFirestore();
+    }
+  } catch (err: any) {
+    console.error("Failed to hydrate ZongoBase state from Firestore:", err.message);
+  }
+}
+
+async function saveStateToFirestore() {
+  if (!db) return;
+  try {
+    const docRef = doc(db, SYSTEM_DOC_PATH, SYSTEM_DOC_ID);
+    await setDoc(docRef, {
+      collections: dbData.collections,
+      users: dbData.users,
+      projects: dbData.projects,
+      files: dbData.files,
+      functions: dbData.functions,
+      apiKeys: dbData.apiKeys,
+      logs: dbData.logs,
+      messages: dbData.messages,
+      updatedAt: new Date().toISOString()
+    });
+    console.log("ZongoBase state successfully saved to Firestore.");
+  } catch (err: any) {
+    console.error("Firestore persistence warning:", err.message);
+  }
+}
+
 // Real-time synchronization active clients
 let sseClients: any[] = [];
 
@@ -220,6 +314,7 @@ function emitSync(event: string, data: any) {
   sseClients.forEach(client => {
     client.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   });
+  markDirty();
 }
 
 function pushLog(type: 'info' | 'warn' | 'error' | 'success', service: 'database' | 'auth' | 'storage' | 'functions' | 'gateway', message: string) {
@@ -633,6 +728,45 @@ app.delete("/api/zongobase/projects/:id", (req, res) => {
   dbData.projects = dbData.projects.filter(p => p.id !== id);
   pushLog("warn", "gateway", `Decommitted developer web project registration schema [${project.name}]`);
   res.json({ message: "Project dismantled." });
+});
+
+app.put("/api/zongobase/projects/:id", (req, res) => {
+  const user = getRequestUser(req);
+  if (!user) return res.status(401).json({ error: "Access Denied: Authed session required." });
+  
+  const id = req.params.id;
+  const projectIndex = dbData.projects.findIndex(p => p.id === id);
+  if (projectIndex === -1) return res.status(404).json({ error: "Project reference not found." });
+  
+  const project = dbData.projects[projectIndex];
+  if (user.role !== "admin" && project.ownerId !== user.id) {
+    return res.status(403).json({ error: "Forbidden: Unauthorized project modification." });
+  }
+  
+  const { name, domainUrl, description } = req.body;
+  if (name !== undefined) {
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: "Integrity Error: Web Project Name required." });
+    }
+    project.name = name.trim();
+  }
+  
+  if (domainUrl !== undefined) {
+    project.domainUrl = domainUrl || "http://localhost:3000";
+  }
+  
+  if (description !== undefined) {
+    project.description = description || "NoSQL database consumer link.";
+  }
+  
+  // Trigger update state sync flag
+  sseClients.forEach(client => {
+    client.write(`event: projects:updated\ndata: ${JSON.stringify(dbData.projects)}\n\n`);
+  });
+  markDirty();
+  
+  pushLog("success", "gateway", `Updated web project [${project.name}] configuration traits`);
+  res.json(project);
 });
 
 // Scoped collections Database APIs (Isolates and validates read/writes)
@@ -1360,6 +1494,20 @@ app.post("/api/zongobase/ai/generate", async (req, res) => {
 
 // Setup Vite & static server rules
 async function startServer() {
+  // Hydrate initial state from Firestore if available
+  if (db) {
+    console.log("Hydrating initial database state from Firestore...");
+    await loadStateFromFirestore();
+  }
+
+  // Periodic flushing interval (every 3 seconds) for robust persistent storage
+  setInterval(async () => {
+    if (isDirty) {
+      isDirty = false;
+      await saveStateToFirestore();
+    }
+  }, 3000);
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

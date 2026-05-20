@@ -12,6 +12,7 @@ import LandingPage from './components/LandingPage';
 import DeveloperProjects from './components/DeveloperProjects';
 import HelpWizard from './components/HelpWizard';
 import { Database, Users, HardDrive, Cpu, KeyRound, Network, Terminal, Settings, Globe, LogOut, Sparkles, ArrowLeft, ArrowRight, Home, ChevronRight, HelpCircle, Compass, BookOpen } from 'lucide-react';
+import { getApiUrl, isExternalHost, getBackendOrigin, setCustomApiUrl } from './utils/api';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
@@ -67,7 +68,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
 
-    let sse: EventSource | null = new EventSource('/api/zongobase/db/sync');
+    let sse: EventSource | null = new EventSource(getApiUrl('/api/zongobase/db/sync'));
 
     sse.onopen = () => {
       setIsConnected(true);
@@ -138,7 +139,7 @@ export default function App() {
       'x-zongobase-user-id': currentUser ? currentUser.id : '',
       'Authorization': currentUser ? `Bearer ${currentUser.id}` : ''
     };
-    return fetch(url, { ...options, headers });
+    return fetch(getApiUrl(url), { ...options, headers });
   };
 
   // Database actions
@@ -262,6 +263,19 @@ export default function App() {
       throw new Error(err.error || 'Failed dismantling project link.');
     }
     setProjects(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleUpdateProject = async (id: string, name: string, domainUrl: string, description: string) => {
+    const res = await fetchWithAuth(`/api/zongobase/projects/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, domainUrl, description })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed updating project link.');
+    }
+    const updated = await res.json();
+    setProjects(prev => prev.map(p => p.id === id ? updated : p));
   };
 
   // Storage actions
@@ -419,6 +433,7 @@ export default function App() {
             collections={displayedCollections}
             onCreateProject={handleCreateProject}
             onDeleteProject={handleDeleteProject}
+            onUpdateProject={handleUpdateProject}
           />
         );
       case 'database':

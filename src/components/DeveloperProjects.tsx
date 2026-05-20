@@ -1,13 +1,15 @@
 import React, { useState } from "react";
 import { WebProject, Collection } from "../types";
-import { Plus, Trash2, Globe, Key, Copy, Check, Play, Terminal, HelpCircle, Code2, Database, AlertCircle, RefreshCw, Send, CheckCircle2, Zap } from "lucide-react";
+import { Plus, Trash2, Globe, Key, Copy, Check, Play, Terminal, HelpCircle, Code2, Database, AlertCircle, RefreshCw, Send, CheckCircle2, Zap, Edit3 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { getApiUrl, getBackendOrigin } from "../utils/api";
 
 interface DeveloperProjectsProps {
   projects: WebProject[];
   collections: Collection[];
   onCreateProject: (name: string, domainUrl: string, description: string) => Promise<void>;
   onDeleteProject: (id: string) => Promise<void>;
+  onUpdateProject: (id: string, name: string, domainUrl: string, description: string) => Promise<void>;
 }
 
 export default function DeveloperProjects({
@@ -15,12 +17,53 @@ export default function DeveloperProjects({
   collections,
   onCreateProject,
   onDeleteProject,
+  onUpdateProject,
 }: DeveloperProjectsProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [domainUrl, setDomainUrl] = useState("");
   const [description, setDescription] = useState("");
   const [selectedProject, setSelectedProject] = useState<WebProject | null>(null);
+  
+  // For Editing Project
+  const [editingProject, setEditingProject] = useState<WebProject | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDomainUrl, setEditDomainUrl] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  const startEditing = (proj: WebProject) => {
+    setEditingProject(proj);
+    setEditName(proj.name);
+    setEditDomainUrl(proj.domainUrl);
+    setEditDescription(proj.description || "");
+    setEditError("");
+  };
+
+  const handleUpdateProjectConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setEditError("");
+    setIsEditing(true);
+    try {
+      if (!editingProject) return;
+      await onUpdateProject(editingProject.id, editName, editDomainUrl, editDescription);
+      // Synchronize currently active/selected project with the new parameters
+      if (selectedProject?.id === editingProject.id) {
+        setSelectedProject({
+          ...selectedProject,
+          name: editName,
+          domainUrl: editDomainUrl,
+          description: editDescription
+        });
+      }
+      setEditingProject(null);
+    } catch (err: any) {
+      setEditError(err.message || "Failed updating project configurations.");
+    } finally {
+      setIsEditing(false);
+    }
+  };
   
   // Copy state mapping
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -74,7 +117,7 @@ export default function DeveloperProjects({
 
     const requestDetails = {
       Timestamp: new Date().toLocaleTimeString(),
-      URL: `${window.location.origin}${apiRoute}`,
+      URL: getApiUrl(apiRoute),
       Headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${selectedProject.apiKey}`
@@ -85,7 +128,7 @@ export default function DeveloperProjects({
     const newLogEntry: any = {
       method: sandboxMethod,
       timestamp: new Date().toLocaleTimeString(),
-      url: apiRoute,
+      url: getApiUrl(apiRoute),
       request: requestDetails,
       status: "pending"
     };
@@ -103,7 +146,7 @@ export default function DeveloperProjects({
         fetchOpts.body = sandboxPayload;
       }
 
-      const res = await fetch(apiRoute, fetchOpts);
+      const res = await fetch(getApiUrl(apiRoute), fetchOpts);
       const data = await res.json();
 
       newLogEntry.status = res.status;
@@ -262,6 +305,84 @@ export default function DeveloperProjects({
             </form>
           </motion.div>
         )}
+
+        {editingProject && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-[#10141f] border border-slate-800 p-6 rounded-2xl max-w-xl relative shadow-2xl"
+          >
+            <h4 className="text-md font-semibold text-white mb-1 flex items-center gap-2">
+              <Edit3 className="w-4 h-4 text-indigo-400" />
+              <span>Configure Linked Web Project</span>
+            </h4>
+            <p className="text-xs text-slate-400 mb-4">
+              Update credentials mapping, metadata, and domain constraints for this project node.
+            </p>
+
+            {editError && (
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-200 text-xs flex gap-2">
+                <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateProjectConfig} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-mono text-slate-500 mb-1">PROJECT NAME</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Brandon Fitness Tracker"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full bg-[#161a25]/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-mono text-slate-500 mb-1">FRONTEND DEPLOY DOMAIN URL</label>
+                  <input
+                    type="url"
+                    placeholder="e.g. https://fitness.netlify.app"
+                    value={editDomainUrl}
+                    onChange={(e) => setEditDomainUrl(e.target.value)}
+                    className="w-full bg-[#161a25]/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono text-slate-500 mb-1">OPTIONAL ARCHITECTURE DESCRIPTION</label>
+                <input
+                  type="text"
+                  placeholder="e.g. NextJS web dashboard tracking consumer activity logs"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="w-full bg-[#161a25]/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setEditingProject(null); setEditError(""); }}
+                  className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-slate-800/40 hover:bg-slate-800 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isEditing}
+                  className="bg-indigo-600 hover:bg-indigo-500 font-medium px-4 py-2 rounded-lg text-xs text-white disabled:opacity-50 flex items-center gap-1 cursor-pointer"
+                >
+                  {isEditing ? "Updating..." : "Save Configuration"}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Main Grid: Left Catalog, Right Selected Connections SDK guide */}
@@ -299,18 +420,31 @@ export default function DeveloperProjects({
                       </div>
                       <div className="text-[10px] text-slate-400 font-mono mt-1 w-full truncate">{proj.domainUrl || "Custom Client Hub"}</div>
                     </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm(`Are you sure you want to dismantle project ${proj.name}?`)) {
-                          onDeleteProject(proj.id);
-                          if (selectedProject?.id === proj.id) setSelectedProject(null);
-                        }
-                      }}
-                      className="p-1 px-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex gap-1 items-center self-start shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEditing(proj);
+                        }}
+                        className="p-1 px-1.5 rounded-lg text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all cursor-pointer"
+                        title="Configure project settings"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (confirm(`Are you sure you want to dismantle project ${proj.name}?`)) {
+                            onDeleteProject(proj.id);
+                            if (selectedProject?.id === proj.id) setSelectedProject(null);
+                          }
+                        }}
+                        className="p-1 px-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer"
+                        title="Delete project link"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between border-t border-slate-800/60 pt-3">
@@ -384,7 +518,7 @@ export default function DeveloperProjects({
                     <pre className="bg-[#0c0f16] p-4 rounded-xl text-[11px] font-mono text-slate-300 leading-relaxed overflow-x-auto border border-slate-900 shadow-inner">
 {`// 1. Save data from any website in the world
 async function insertItem(collection, documentId, payload) {
-  const response = await fetch(\`\${window.location.origin}/api/zongobase/db/collections/\${collection}/docs\`, {
+  const response = await fetch(\`\${"${getBackendOrigin()}"}/api/zongobase/db/collections/\${collection}/docs\`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -400,7 +534,7 @@ async function insertItem(collection, documentId, payload) {
 
 // 2. Fetch all collections restricted to your projects
 async function getCollections() {
-  const res = await fetch(\`\${window.location.origin}/api/zongobase/db\`, {
+  const res = await fetch(\`\${"${getBackendOrigin()}"}/api/zongobase/db\`, {
     headers: { "Authorization": "Bearer ${activeProj.apiKey}" }
   });
   return res.json();
@@ -408,7 +542,7 @@ async function getCollections() {
                     </pre>
                     <button
                       onClick={() => copyToClipboard(`async function insertItem(collection, documentId, payload) {
-  const response = await fetch(\`${window.location.origin}/api/zongobase/db/collections/\${collection}/docs\`, {
+  const response = await fetch(\`${getBackendOrigin()}/api/zongobase/db/collections/\${collection}/docs\`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

@@ -10,6 +10,7 @@ import {
   GoogleAuthProvider, 
   updateProfile 
 } from "firebase/auth";
+import { getApiUrl } from "../utils/api";
 
 // Real Sovereign Config credentials provided by user
 const firebaseConfig = {
@@ -77,7 +78,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
     setInfoMsg("");
     setIsSendingCode(true);
     try {
-      const res = await fetch("/api/zongobase/auth/send-code", {
+      const res = await fetch(getApiUrl("/api/zongobase/auth/send-code"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -119,7 +120,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
     // 1. If it is a Default/Seeded account, use local backend pathways directly to bypass active setups
     if (isDefaultAcc) {
       try {
-        const res = await fetch("/api/zongobase/auth/login", {
+        const res = await fetch(getApiUrl("/api/zongobase/auth/login"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: cleanEmail, password }),
@@ -157,7 +158,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
         });
 
         // Sync with our Express backend and initialize personal collection workspaces
-        const syncRes = await fetch("/api/zongobase/auth/firebase-sync", {
+        const syncRes = await fetch(getApiUrl("/api/zongobase/auth/firebase-sync"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -181,7 +182,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
         const firebaseUser = userCredential.user;
 
         // Sync with local Express backend
-        const syncRes = await fetch("/api/zongobase/auth/firebase-sync", {
+        const syncRes = await fetch(getApiUrl("/api/zongobase/auth/firebase-sync"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -226,7 +227,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
       const userCredential = await signInWithPopup(auth, googleProvider);
       const firebaseUser = userCredential.user;
 
-      const syncRes = await fetch("/api/zongobase/auth/firebase-sync", {
+      const syncRes = await fetch(getApiUrl("/api/zongobase/auth/firebase-sync"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
