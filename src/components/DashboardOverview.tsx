@@ -166,8 +166,8 @@ export default function DashboardOverview({
                 <span>No telemetry sequences recorded on this workspace loop.</span>
               </div>
             ) : (
-              logs.map((log) => (
-                <div key={log.id} className="flex items-start gap-2 text-slate-300">
+              logs.map((log, idx) => (
+                <div key={`${log.id}-${idx}`} className="flex items-start gap-2 text-slate-300">
                   <span className="text-slate-500 shrink-0 text-[9px]">
                     {new Date(log.timestamp).toLocaleTimeString()}
                   </span>

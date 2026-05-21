@@ -9,7 +9,16 @@ interface DeveloperProjectsProps {
   collections: Collection[];
   onCreateProject: (name: string, domainUrl: string, description: string) => Promise<void>;
   onDeleteProject: (id: string) => Promise<void>;
-  onUpdateProject: (id: string, name: string, domainUrl: string, description: string) => Promise<void>;
+  onUpdateProject: (
+    id: string,
+    name: string,
+    domainUrl: string,
+    description: string,
+    authEmailPasswordEnabled?: boolean,
+    authAllowRegistration?: boolean,
+    minPasswordLength?: number,
+    authRequireConfirm?: boolean
+  ) => Promise<void>;
 }
 
 export default function DeveloperProjects({
@@ -30,6 +39,10 @@ export default function DeveloperProjects({
   const [editName, setEditName] = useState("");
   const [editDomainUrl, setEditDomainUrl] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editAuthEmailPasswordEnabled, setEditAuthEmailPasswordEnabled] = useState(true);
+  const [editAuthAllowRegistration, setEditAuthAllowRegistration] = useState(true);
+  const [editMinPasswordLength, setEditMinPasswordLength] = useState(6);
+  const [editAuthRequireConfirm, setEditAuthRequireConfirm] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editError, setEditError] = useState("");
 
@@ -38,6 +51,10 @@ export default function DeveloperProjects({
     setEditName(proj.name);
     setEditDomainUrl(proj.domainUrl);
     setEditDescription(proj.description || "");
+    setEditAuthEmailPasswordEnabled(proj.authEmailPasswordEnabled !== false);
+    setEditAuthAllowRegistration(proj.authAllowRegistration !== false);
+    setEditMinPasswordLength(proj.minPasswordLength || 6);
+    setEditAuthRequireConfirm(!!proj.authRequireConfirm);
     setEditError("");
   };
 
@@ -47,14 +64,27 @@ export default function DeveloperProjects({
     setIsEditing(true);
     try {
       if (!editingProject) return;
-      await onUpdateProject(editingProject.id, editName, editDomainUrl, editDescription);
+      await onUpdateProject(
+        editingProject.id,
+        editName,
+        editDomainUrl,
+        editDescription,
+        editAuthEmailPasswordEnabled,
+        editAuthAllowRegistration,
+        editMinPasswordLength,
+        editAuthRequireConfirm
+      );
       // Synchronize currently active/selected project with the new parameters
       if (selectedProject?.id === editingProject.id) {
         setSelectedProject({
           ...selectedProject,
           name: editName,
           domainUrl: editDomainUrl,
-          description: editDescription
+          description: editDescription,
+          authEmailPasswordEnabled: editAuthEmailPasswordEnabled,
+          authAllowRegistration: editAuthAllowRegistration,
+          minPasswordLength: editMinPasswordLength,
+          authRequireConfirm: editAuthRequireConfirm
         });
       }
       setEditingProject(null);
@@ -364,6 +394,76 @@ export default function DeveloperProjects({
                 />
               </div>
 
+              <div className="border-t border-slate-800/80 pt-4 mt-4 space-y-4">
+                <div className="text-[10px] font-mono text-indigo-400 font-semibold tracking-wider">PROJECT AUTHENTICATION (mBaaS CONFIGURATION)</div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex items-center justify-between p-3 bg-[#131722]/50 border border-slate-800/80 rounded-xl">
+                    <div>
+                      <div className="text-xs font-medium text-white">Email & Password Auth</div>
+                      <div className="text-[10px] text-slate-400">Enable user sign-in via credentials</div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={editAuthEmailPasswordEnabled}
+                        onChange={(e) => setEditAuthEmailPasswordEnabled(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 peer-checked:after:bg-white peer-checked:after:border-white"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-[#131722]/50 border border-slate-800/80 rounded-xl">
+                    <div>
+                      <div className="text-xs font-medium text-white">Self-Registration</div>
+                      <div className="text-[10px] text-slate-400">Allow users to sign-up themselves</div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={editAuthAllowRegistration}
+                        disabled={!editAuthEmailPasswordEnabled}
+                        onChange={(e) => setEditAuthAllowRegistration(e.target.checked)}
+                        className="sr-only peer disabled:opacity-50"
+                      />
+                      <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 peer-checked:after:bg-white peer-checked:after:border-white"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-mono text-slate-500 mb-1">MINIMUM PASSWORD LENGTH</label>
+                    <input
+                      type="number"
+                      min={4}
+                      max={32}
+                      disabled={!editAuthEmailPasswordEnabled}
+                      value={editMinPasswordLength}
+                      onChange={(e) => setEditMinPasswordLength(Number(e.target.value))}
+                      className="w-full bg-[#161a25]/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-[#131722]/50 border border-slate-800/80 rounded-xl">
+                    <div>
+                      <div className="text-xs font-medium text-white">Require Email OTP</div>
+                      <div className="text-[10px] text-slate-400">Validate emails using verification code</div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={editAuthRequireConfirm}
+                        disabled={!editAuthEmailPasswordEnabled}
+                        onChange={(e) => setEditAuthRequireConfirm(e.target.checked)}
+                        className="sr-only peer disabled:opacity-50"
+                      />
+                      <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 peer-checked:after:bg-white peer-checked:after:border-white"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex gap-3 justify-end pt-2">
                 <button
                   type="button"
@@ -496,6 +596,64 @@ export default function DeveloperProjects({
                       >
                         {copiedKey === "apikey" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Project Client Authentication configuration summary */}
+              <div className="bg-[#10141f] border border-slate-800/80 p-6 rounded-2xl space-y-4">
+                <div className="flex justify-between items-center gap-4">
+                  <div>
+                    <h3 className="text-xs font-mono uppercase text-white font-semibold flex items-center gap-2">
+                      <Key className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Project Authentication Settings</span>
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-1">Status controls mapped to client-side login and registration endpoints.</p>
+                  </div>
+                  <button
+                    onClick={() => startEditing(activeProj)}
+                    className="p-1 px-3 text-[10px] font-mono font-semibold rounded-lg text-indigo-400 hover:text-white bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-600 hover:border-indigo-500 transition-all cursor-pointer shrink-0"
+                  >
+                    Configure Auth
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 border-t border-slate-800/60 pt-4">
+                  <div className="p-3 bg-slate-900/40 rounded-xl border border-slate-800/40">
+                    <div className="text-[9px] font-mono text-slate-500 uppercase">EMAIL / PASSWORD</div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${activeProj.authEmailPasswordEnabled !== false ? "bg-emerald-500" : "bg-red-500"}`}></span>
+                      <span className="text-xs font-semibold text-white">
+                        {activeProj.authEmailPasswordEnabled !== false ? "ACTIVE" : "DISABLED"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/40 rounded-xl border border-slate-800/40">
+                    <div className="text-[9px] font-mono text-slate-500 uppercase">SELF REGISTER</div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${activeProj.authAllowRegistration !== false ? "bg-emerald-500" : "bg-orange-500"}`}></span>
+                      <span className="text-xs font-semibold text-white font-mono">
+                        {activeProj.authAllowRegistration !== false ? "ALLOWED" : "INVITE ONLY"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/40 rounded-xl border border-slate-800/40">
+                    <div className="text-[9px] font-mono text-slate-500 uppercase">PASSWORD REQS</div>
+                    <div className="text-xs font-semibold text-white mt-1">
+                      Min {activeProj.minPasswordLength || 6} Char
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/40 rounded-xl border border-slate-800/40">
+                    <div className="text-[9px] font-mono text-slate-500 uppercase">EMAIL OTP CONFIRM</div>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className={`w-1.5 h-1.5 rounded-full ${activeProj.authRequireConfirm ? "bg-cyan-500" : "bg-slate-500"}`}></span>
+                      <span className="text-xs font-semibold text-white">
+                        {activeProj.authRequireConfirm ? "REQUIRED" : "IMMEDIATE"}
+                      </span>
                     </div>
                   </div>
                 </div>

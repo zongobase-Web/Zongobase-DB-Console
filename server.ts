@@ -319,7 +319,7 @@ function emitSync(event: string, data: any) {
 
 function pushLog(type: 'info' | 'warn' | 'error' | 'success', service: 'database' | 'auth' | 'storage' | 'functions' | 'gateway', message: string) {
   const newLog: ZongoLog = {
-    id: `log_${Date.now()}`,
+    id: `log_${Date.now()}_${Math.floor(Math.random() * 1000000)}`,
     timestamp: new Date().toISOString(),
     type,
     service,
@@ -705,7 +705,11 @@ app.post("/api/zongobase/projects", (req, res) => {
     description: description || "NoSQL database consumer link.",
     apiKey: `zb_public_${user.id}_${entropy}`,
     ownerId: user.id,
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    authEmailPasswordEnabled: true,
+    authAllowRegistration: true,
+    minPasswordLength: 6,
+    authRequireConfirm: false
   };
   
   dbData.projects.push(newProj);
@@ -743,7 +747,16 @@ app.put("/api/zongobase/projects/:id", (req, res) => {
     return res.status(403).json({ error: "Forbidden: Unauthorized project modification." });
   }
   
-  const { name, domainUrl, description } = req.body;
+  const { 
+    name, 
+    domainUrl, 
+    description,
+    authEmailPasswordEnabled,
+    authAllowRegistration,
+    minPasswordLength,
+    authRequireConfirm
+  } = req.body;
+
   if (name !== undefined) {
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Integrity Error: Web Project Name required." });
@@ -757,6 +770,23 @@ app.put("/api/zongobase/projects/:id", (req, res) => {
   
   if (description !== undefined) {
     project.description = description || "NoSQL database consumer link.";
+  }
+
+  if (authEmailPasswordEnabled !== undefined) {
+    project.authEmailPasswordEnabled = !!authEmailPasswordEnabled;
+  }
+
+  if (authAllowRegistration !== undefined) {
+    project.authAllowRegistration = !!authAllowRegistration;
+  }
+
+  if (minPasswordLength !== undefined) {
+    const parsedLen = Number(minPasswordLength);
+    project.minPasswordLength = isNaN(parsedLen) ? 6 : Math.max(4, Math.min(32, parsedLen));
+  }
+
+  if (authRequireConfirm !== undefined) {
+    project.authRequireConfirm = !!authRequireConfirm;
   }
   
   // Trigger update state sync flag

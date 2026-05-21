@@ -88,7 +88,18 @@ export default function App() {
         setFiles(payload.files || []);
         setFunctions(payload.functions || []);
         setApiKeys(payload.apiKeys || []);
-        setLogs(payload.logs || []);
+        
+        const rawLogs = payload.logs || [];
+        const uniqueLogs: ZongoLog[] = [];
+        const seenIds = new Set<string>();
+        rawLogs.forEach((l: ZongoLog) => {
+          if (l && l.id && !seenIds.has(l.id)) {
+            seenIds.add(l.id);
+            uniqueLogs.push(l);
+          }
+        });
+        setLogs(uniqueLogs);
+        
         setMessages(payload.messages || []);
       } catch (err) {
         console.error('Failed processing initial database pool metadata:', err);
@@ -121,7 +132,10 @@ export default function App() {
 
     sse.addEventListener('log', (e: MessageEvent) => {
       const log = JSON.parse(e.data) as ZongoLog;
-      setLogs((prev) => [log, ...prev].slice(0, 50));
+      setLogs((prev) => {
+        if (prev.some(p => p.id === log.id)) return prev;
+        return [log, ...prev].slice(0, 50);
+      });
     });
 
     return () => {
@@ -265,10 +279,27 @@ export default function App() {
     setProjects(prev => prev.filter(p => p.id !== id));
   };
 
-  const handleUpdateProject = async (id: string, name: string, domainUrl: string, description: string) => {
+  const handleUpdateProject = async (
+    id: string,
+    name: string,
+    domainUrl: string,
+    description: string,
+    authEmailPasswordEnabled?: boolean,
+    authAllowRegistration?: boolean,
+    minPasswordLength?: number,
+    authRequireConfirm?: boolean
+  ) => {
     const res = await fetchWithAuth(`/api/zongobase/projects/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, domainUrl, description })
+      body: JSON.stringify({
+        name,
+        domainUrl,
+        description,
+        authEmailPasswordEnabled,
+        authAllowRegistration,
+        minPasswordLength,
+        authRequireConfirm
+      })
     });
     if (!res.ok) {
       const err = await res.json();
@@ -379,7 +410,7 @@ export default function App() {
     ? collections 
     : collections.filter(c => c.ownerId === currentUser?.id);
 
-  const displayedUsers = isAdmin ? users : [];
+  const displayedUsers = users;
   
   const displayedProjects = isAdmin 
     ? projects 
@@ -449,7 +480,6 @@ export default function App() {
           />
         );
       case 'auth':
-        if (!isAdmin) return null;
         return (
           <AuthManager
             users={displayedUsers}
@@ -523,6 +553,7 @@ export default function App() {
         { id: 'dashboard', label: 'Console Overview', icon: Terminal },
         { id: 'projects', label: 'Web Projects Linker', icon: Globe },
         { id: 'database', label: 'My NoSQL Database', icon: Database },
+        { id: 'auth', label: 'Users Manager', icon: Users },
         { id: 'storage', label: 'Virtual Storage', icon: HardDrive },
         { id: 'gateway-connect', label: 'Export Code / SDKs', icon: Network },
         { id: 'help-wizard', label: 'Setup Wizard & FAQs', icon: HelpCircle }

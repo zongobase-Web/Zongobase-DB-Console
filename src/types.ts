@@ -21,6 +21,10 @@ export interface WebProject {
   apiKey: string;
   ownerId: string; // References AuthUser.id
   createdAt: string;
+  authEmailPasswordEnabled?: boolean;
+  authAllowRegistration?: boolean;
+  minPasswordLength?: number;
+  authRequireConfirm?: boolean;
 }
 
 export interface AuthUser {

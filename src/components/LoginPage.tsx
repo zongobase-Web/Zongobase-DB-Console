@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Shield, Key, Eye, EyeOff, Loader2, Database, Code, CircleAlert, Sparkles, Terminal, Info, CheckCircle2, FlaskConical, Command, ArrowLeft, Mail, RefreshCw, AlertCircle, HelpCircle } from "lucide-react";
+import { Shield, Key, Eye, EyeOff, Loader2, Database, Code, CircleAlert, Sparkles, Terminal, Info, CheckCircle2, FlaskConical, Command, ArrowLeft, Mail, RefreshCw, AlertCircle, HelpCircle, Lock, LockOpen } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
@@ -347,6 +347,25 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
 
         {/* Console Box Container */}
         <div className="bg-[#1e1f20] border border-[#2d2f31] rounded-2xl p-6 sm:p-8 shadow-[0_20px_45px_0_rgba(0,0,0,0.4)] relative overflow-hidden">
+          
+          {/* Admin Override Lock Toggler Button in Corner */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsAdminPortal((prev) => !prev);
+              setIsRegister(false);
+              setErrorMsg("");
+              setInfoMsg("");
+            }}
+            id="btn-toggle-admin-portal"
+            className="absolute top-4 right-4 p-2 rounded-lg text-slate-400 hover:text-[#8ab4f8] bg-[#131416]/60 hover:bg-slate-900 border border-[#2d2f31] hover:border-[#8ab4f8]/30 transition-all cursor-pointer z-20 flex items-center justify-center gap-1.5 shadow-md"
+            title={isAdminPortal ? "Switch to Regular User/Developer Mode" : "Configure for Admin & Developer Accounts"}
+          >
+            {isAdminPortal ? <LockOpen className="w-3.5 h-3.5 text-indigo-400 animate-pulse" /> : <Lock className="w-3.5 h-3.5 text-slate-400" />}
+            <span className="text-[10px] font-mono tracking-wider text-slate-450 font-bold hidden sm:inline">
+              {isAdminPortal ? "DEV AREA" : "LOCK PORTAL"}
+            </span>
+          </button>
           
           {/* Header Title displaying master styled branding */}
           <div className="flex flex-col items-center text-center space-y-3 pb-6 border-b border-[#2d2f31] mb-6">
