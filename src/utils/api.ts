@@ -2,7 +2,7 @@
  * ZongoBase Dynamic API Routing & Integration Coordinator
  */
 
-const DEFAULT_DEV_BACKEND = "https://ais-dev-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app";
+const DEFAULT_DEV_BACKEND = "https://ais-pre-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app";
 
 export function isExternalHost(): boolean {
   const hn = window.location.hostname;

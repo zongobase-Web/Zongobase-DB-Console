@@ -10,7 +10,7 @@ import {
   GoogleAuthProvider, 
   updateProfile 
 } from "firebase/auth";
-import { getApiUrl } from "../utils/api";
+import { getApiUrl, getBackendOrigin, setCustomApiUrl, isExternalHost } from "../utils/api";
 
 // Real Sovereign Config credentials provided by user
 const firebaseConfig = {
@@ -52,6 +52,41 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
   const [codeSent, setCodeSent] = useState(false);
   const [isSendingCode, setIsSendingCode] = useState(false);
   const [systemLogsAlert, setSystemLogsAlert] = useState<{ visible: boolean; code: string; email: string } | null>(null);
+
+  // Backend dynamic origin configuration & diagnostics
+  const [showApiSettings, setShowApiSettings] = useState(false);
+  const [customApiUrlInput, setCustomApiUrlInput] = useState(() => getBackendOrigin());
+  const [apiConnectionStatus, setApiConnectionStatus] = useState<'unchecked' | 'checking' | 'connected' | 'failed'>('unchecked');
+
+  useEffect(() => {
+    let active = true;
+    const checkConnection = async () => {
+      setApiConnectionStatus('checking');
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        
+        const res = await fetch(getApiUrl("/api/health"), { 
+          signal: controller.signal,
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        clearTimeout(timeoutId);
+        if (active) {
+          if (res.ok) {
+            setApiConnectionStatus('connected');
+          } else {
+            setApiConnectionStatus('failed');
+          }
+        }
+      } catch (err) {
+        if (active) {
+          setApiConnectionStatus('failed');
+        }
+      }
+    };
+    checkConnection();
+    return () => { active = false; };
+  }, []);
 
   // Hidden keyboard shortcut combo: Ctrl + Alt + A to toggle Root Admin Gateway!
   useEffect(() => {
@@ -588,7 +623,91 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
                 )}
               </button>
             </form>
-          </div>
+              
+              {/* Active Backend Connection Tray */}
+              <div className="mt-4 p-3 rounded-xl bg-[#131416]/90 border border-[#2d2f31] space-y-2.5 text-left">
+                <div className="flex justify-between items-center text-[10px] font-mono">
+                  <span className="text-slate-400 flex items-center gap-1.5 uppercase font-semibold">
+                    <Terminal className="w-3 h-3 text-indigo-400" />
+                    <span>ZongoBase Active Gateway</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 font-sans">
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      apiConnectionStatus === 'connected' ? 'bg-emerald-500 animate-pulse' :
+                      apiConnectionStatus === 'checking' ? 'bg-violet-400 animate-pulse' :
+                      apiConnectionStatus === 'failed' ? 'bg-rose-500' : 'bg-slate-500'
+                    }`} />
+                    <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                      apiConnectionStatus === 'connected' ? 'text-emerald-400' :
+                      apiConnectionStatus === 'checking' ? 'text-violet-400' :
+                      apiConnectionStatus === 'failed' ? 'text-rose-450 font-semibold' : 'text-slate-400'
+                    }`}>
+                      {apiConnectionStatus === 'connected' ? 'ONLINE' :
+                       apiConnectionStatus === 'checking' ? 'TESTING...' :
+                       apiConnectionStatus === 'failed' ? 'FAILED TO FETCH' : 'UNCHECKED'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowApiSettings(!showApiSettings)}
+                      className="ml-1 text-[#8ab4f8] hover:underline cursor-pointer font-bold text-[8.5px] uppercase tracking-wider bg-indigo-500/10 hover:bg-indigo-500/20 px-1.5 py-0.5 rounded border border-indigo-500/20 font-mono"
+                    >
+                      {showApiSettings ? 'CLOSE' : 'SETTINGS'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="text-[10px] font-mono text-slate-500 break-all bg-black/40 p-2 rounded border border-[#2d2f31] flex items-center justify-between gap-1 select-all">
+                  <span className="text-slate-300 font-sans font-bold bg-[#1e1f20] px-1.5 py-0.5 rounded text-[8px] border border-slate-750 text-[#8ab4f8] shrink-0 uppercase">
+                    {isExternalHost() ? "NETLIFY MODE" : "SANDBOX MODE"}
+                  </span>
+                  <span className="truncate flex-1 text-right font-mono text-[10px] text-slate-400 font-medium">{getBackendOrigin()}</span>
+                </div>
+
+                {showApiSettings && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className="space-y-2 pt-2 border-t border-[#2d2f31]/60"
+                  >
+                    <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                      Outside of standard sandboxes, your browser calls the dynamic Shared App URL which is publicly exposed. You can explicitly connect to any other custom ZongoBase REST API URL here:
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. https://my-custom-zongobase.run.app"
+                        value={customApiUrlInput}
+                        onChange={(e) => setCustomApiUrlInput(e.target.value)}
+                        className="flex-1 bg-black/60 border border-slate-800 rounded px-2.5 py-1.5 text-[10.5px] text-white focus:outline-none focus:border-indigo-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomApiUrl(customApiUrlInput || null);
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[9px] px-2.5 py-1.5 rounded cursor-pointer font-mono uppercase shrink-0"
+                      >
+                        SET & RELOAD
+                      </button>
+                    </div>
+                    {customApiUrlInput !== getBackendOrigin() && (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomApiUrl(null);
+                            setCustomApiUrlInput(getBackendOrigin());
+                          }}
+                          className="text-[9px] text-slate-500 hover:text-slate-300 underline font-mono"
+                        >
+                          RESTORE SYSTEM DEFAULT URL
+                        </button>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+            </div>
 
           <div className="mt-6 border-t border-[#2d2f31] pt-4 flex items-center justify-between text-[10px] font-mono text-[#8e918f]">
             <span>VAULT CIPHER: SHA-256</span>
