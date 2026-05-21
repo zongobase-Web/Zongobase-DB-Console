@@ -45,6 +45,7 @@ export interface StorageFile {
   mimeType: string;
   content?: string; // Content for text files
   updatedAt: string;
+  url?: string;
 }
 
 export interface CloudFunction {

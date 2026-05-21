@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { CloudFunction } from '../types';
+import { getApiUrl } from '../utils/api';
 import { Cpu, Plus, Sparkles, Terminal, Activity, Trash2, ShieldCheck, Play, HelpCircle, Code } from 'lucide-react';
 
 interface Props {
@@ -118,7 +119,7 @@ exports.onDatabaseWrite = async (change) => {
     if (!aiCodePrompt) return;
     setIsAiGenerating(true);
     try {
-      const response = await fetch('/api/zongobase/ai/generate', {
+      const response = await fetch(getApiUrl('/api/zongobase/ai/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'function', prompt: aiCodePrompt })

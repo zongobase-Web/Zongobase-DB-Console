@@ -6,6 +6,7 @@ import { Collection, AuthUser, StorageFile, CloudFunction, APIKey, ZongoLog, Rea
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 import fs from "fs";
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 dotenv.config();
 
@@ -45,7 +46,23 @@ const dbData: {
   apiKeys: APIKey[];
   logs: ZongoLog[];
   messages: DevMessage[];
+  r2Config?: {
+    accountId: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    bucketName: string;
+    publicUrl?: string;
+    useR2: boolean;
+  };
 } = {
+  r2Config: {
+    accountId: "",
+    accessKeyId: "",
+    secretAccessKey: "",
+    bucketName: "",
+    publicUrl: "",
+    useR2: false
+  },
   messages: [
     {
       id: "msg_1",
@@ -314,6 +331,7 @@ async function loadStateFromFirestore() {
         if (Array.isArray(data.apiKeys)) dbData.apiKeys = data.apiKeys;
         if (Array.isArray(data.logs)) dbData.logs = data.logs;
         if (Array.isArray(data.messages)) dbData.messages = data.messages;
+        if (data.r2Config) dbData.r2Config = data.r2Config;
         console.log("ZongoBase persistent cloud state successfully hydrated from Firestore.");
       }
     } else {
@@ -338,6 +356,7 @@ async function saveStateToFirestore() {
       apiKeys: dbData.apiKeys,
       logs: dbData.logs,
       messages: dbData.messages,
+      r2Config: dbData.r2Config || null,
       updatedAt: new Date().toISOString()
     });
     console.log("ZongoBase state successfully saved to Firestore.");
@@ -1095,37 +1114,262 @@ app.delete("/api/zongobase/auth/users/:id", (req, res) => {
   res.json({ message: "User deleted" });
 });
 
+// Cloudflare S2/R2 Storage client manager
+let r2Client: S3Client | null = null;
+
+function getR2Client() {
+  const accountId = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || dbData.r2Config?.accountId;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || dbData.r2Config?.accessKeyId;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || dbData.r2Config?.secretAccessKey;
+  const bucketName = process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_R2_BUCKET_NAME || dbData.r2Config?.bucketName;
+  const useR2 = (process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID) ? true : (dbData.r2Config?.useR2 || false);
+
+  if (!useR2 || !accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+    return null;
+  }
+
+  if (!r2Client) {
+    r2Client = new S3Client({
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+      region: "auto",
+    });
+  }
+  return {
+    client: r2Client,
+    bucketName,
+    publicUrl: process.env.R2_PUBLIC_URL || process.env.CLOUDFLARE_R2_PUBLIC_URL || dbData.r2Config?.publicUrl,
+  };
+}
+
+function resetR2Client() {
+  r2Client = null;
+}
+
 // Storage APIs
 app.get("/api/zongobase/storage", (req, res) => {
   res.json({ files: dbData.files });
 });
 
-app.post("/api/zongobase/storage", (req, res) => {
+// Cloudflare R2 Secure Proxy Live Reader
+app.get("/api/zongobase/storage/raw/:id", async (req, res) => {
+  const id = req.params.id;
+  const target = dbData.files.find(f => f.id === id);
+  if (!target) return res.status(404).json({ error: "File not found" });
+
+  const r2 = getR2Client();
+  if (r2) {
+    try {
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const key = target.path.startsWith("/") ? target.path.substring(1) : target.path;
+      const response = await r2.client.send(new GetObjectCommand({
+        Bucket: r2.bucketName,
+        Key: key
+      }));
+      
+      res.setHeader("Content-Type", target.mimeType || "application/octet-stream");
+      
+      if (response.Body) {
+        const stream = response.Body as any;
+        stream.pipe(res);
+        return;
+      }
+    } catch (err: any) {
+      console.error("Cloudflare R2 read action failed:", err.message);
+    }
+  }
+
+  // Fallback to local representation if R2 load fails or is off
+  if (target.content !== undefined) {
+    if (target.content.startsWith("data:") && target.content.includes(";base64,")) {
+      const base64Data = target.content.split(";base64,")[1];
+      res.setHeader("Content-Type", target.mimeType);
+      res.send(Buffer.from(base64Data, "base64"));
+    } else {
+      res.setHeader("Content-Type", target.mimeType || "text/plain");
+      res.send(target.content);
+    }
+  } else {
+    res.status(404).json({ error: "File content is stored on remote storage but could not be downloaded." });
+  }
+});
+
+// Cloudflare R2 Live Connection Diagnostics & Status Tracker
+app.get("/api/zongobase/storage/config", (req, res) => {
+  const accountId = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || dbData.r2Config?.accountId || "";
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || dbData.r2Config?.accessKeyId || "";
+  const rawSecret = process.env.R2_SECRET_ACCESS_KEY || process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || dbData.r2Config?.secretAccessKey || "";
+  const secretAccessKeyMasked = rawSecret.length > 0 ? "••••••••••••••••" + rawSecret.slice(-4) : "";
+  const bucketName = process.env.R2_BUCKET_NAME || process.env.CLOUDFLARE_R2_BUCKET_NAME || dbData.r2Config?.bucketName || "";
+  const publicUrl = process.env.R2_PUBLIC_URL || process.env.CLOUDFLARE_R2_PUBLIC_URL || dbData.r2Config?.publicUrl || "";
+  
+  const isEnvSet = !!(process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID);
+  const useR2 = isEnvSet ? true : (dbData.r2Config?.useR2 || false);
+
+  res.json({
+    accountId,
+    accessKeyId,
+    secretAccessKey: secretAccessKeyMasked,
+    bucketName,
+    publicUrl,
+    useR2,
+    isEnvSet
+  });
+});
+
+app.post("/api/zongobase/storage/config", (req, res) => {
+  const { accountId, accessKeyId, secretAccessKey, bucketName, publicUrl, useR2 } = req.body;
+  
+  const isEnvSet = !!(process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID);
+  if (isEnvSet) {
+    return res.status(403).json({ error: "System Environment variables are preset and override live configuration adjustments." });
+  }
+
+  let finalSecret = secretAccessKey;
+  if (secretAccessKey && secretAccessKey.startsWith("••••")) {
+    finalSecret = dbData.r2Config?.secretAccessKey || "";
+  }
+
+  dbData.r2Config = {
+    accountId: accountId || "",
+    accessKeyId: accessKeyId || "",
+    secretAccessKey: finalSecret || "",
+    bucketName: bucketName || "",
+    publicUrl: publicUrl || "",
+    useR2: !!useR2
+  };
+
+  resetR2Client();
+  markDirty();
+  
+  pushLog("info", "storage", `Updated Cloudflare R2 active configurations. Status: ${useR2 ? "ENABLED" : "DISABLED"}`);
+  res.json({ success: true, message: "Cloudflare R2 settings applied successfully." });
+});
+
+app.post("/api/zongobase/storage/config/test", async (req, res) => {
+  const { accountId, accessKeyId, secretAccessKey, bucketName } = req.body;
+  
+  let finalSecret = secretAccessKey;
+  if (secretAccessKey && secretAccessKey.startsWith("••••")) {
+    finalSecret = dbData.r2Config?.secretAccessKey || "";
+  }
+
+  if (!accountId || !accessKeyId || !finalSecret || !bucketName) {
+    return res.status(400).json({ error: "All account parameters (Account ID, Access Key ID, Secret Key, and Bucket Name) are required." });
+  }
+
+  try {
+    const testClient = new S3Client({
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId,
+        secretAccessKey: finalSecret,
+      },
+      region: "auto",
+    });
+
+    await testClient.send(new ListObjectsV2Command({
+      Bucket: bucketName,
+      MaxKeys: 1
+    }));
+
+    res.json({ success: true, message: `Successfully connected to Cloudflare R2 bucket: [ ${bucketName} ]` });
+  } catch (err: any) {
+    console.error("R2 connection test error:", err);
+    res.status(500).json({ error: `Connection failed: ${err.message}` });
+  }
+});
+
+app.post("/api/zongobase/storage", async (req, res) => {
   const { name, path: filePath, content, mimeType } = req.body;
   if (!name || !filePath) {
     return res.status(400).json({ error: "File Name and Directory Path are required." });
   }
 
+  const cleanPath = filePath.startsWith("/") ? filePath : "/" + filePath;
+  const id = `file_${Date.now()}`;
+  let finalContent = content || "";
+  let isR2active = false;
+  let fileUrl = "";
+
+  const r2 = getR2Client();
+  if (r2) {
+    try {
+      const key = cleanPath.startsWith("/") ? cleanPath.substring(1) : cleanPath;
+      
+      let bodyBuffer: Buffer;
+      if (content && (content.startsWith("data:") && content.includes(";base64,"))) {
+        const base64Data = content.split(";base64,")[1];
+        bodyBuffer = Buffer.from(base64Data, "base64");
+      } else {
+        bodyBuffer = Buffer.from(finalContent, "utf-8");
+      }
+
+      await r2.client.send(new PutObjectCommand({
+        Bucket: r2.bucketName,
+        Key: key,
+        Body: bodyBuffer,
+        ContentType: mimeType || "application/octet-stream",
+      }));
+
+      isR2active = true;
+      if (r2.publicUrl) {
+        fileUrl = `${r2.publicUrl.replace(/\/$/, '')}/${key}`;
+      } else {
+        fileUrl = `/api/zongobase/storage/raw/${id}`;
+      }
+      pushLog("success", "storage", `Successfully uploaded media file [${cleanPath}] to Cloudflare R2 bucket [.../${r2.bucketName}]`);
+      
+      if (bodyBuffer.length > 512 * 1024) {
+        finalContent = ""; // Empty body since it's large and securely in cloud S3
+      }
+    } catch (err: any) {
+      console.error("Cloudflare R2 put operation failed:", err.message);
+      pushLog("error", "storage", `Failed uploading [${cleanPath}] to S3/R2 Bucket: ${err.message}`);
+      return res.status(502).json({ error: `Cloudflare R2 sync failed: ${err.message}` });
+    }
+  } else {
+    pushLog("success", "storage", `Created virtual storage media file [${cleanPath}] (local fallback mode)`);
+  }
+
   const newFile: StorageFile = {
-    id: `file_${Date.now()}`,
+    id,
     name,
-    path: filePath.startsWith("/") ? filePath : "/" + filePath,
-    size: content ? Buffer.byteLength(content) : 0,
+    path: cleanPath,
+    size: content ? (content.startsWith("data:") && content.includes(";base64,")? Buffer.from(content.split(";base64,")[1], "base64").length : Buffer.byteLength(finalContent)) : 0,
     mimeType: mimeType || "text/plain",
-    content: content || "",
-    updatedAt: new Date().toISOString()
+    content: finalContent,
+    updatedAt: new Date().toISOString(),
+    ...(fileUrl ? { url: fileUrl } : {})
   };
 
   dbData.files.push(newFile);
-  pushLog("success", "storage", `Created virtual storage media file [${newFile.path}]`);
   emitSync("files:updated", dbData.files);
   res.status(201).json(newFile);
 });
 
-app.delete("/api/zongobase/storage/:id", (req, res) => {
+app.delete("/api/zongobase/storage/:id", async (req, res) => {
   const id = req.params.id;
   const target = dbData.files.find(f => f.id === id);
   if (!target) return res.status(404).json({ error: "File not found" });
+
+  const r2 = getR2Client();
+  if (r2) {
+    try {
+      const key = target.path.startsWith("/") ? target.path.substring(1) : target.path;
+      await r2.client.send(new DeleteObjectCommand({
+        Bucket: r2.bucketName,
+        Key: key
+      }));
+      pushLog("success", "storage", `Deleted [${target.path}] physically from Cloudflare R2 S3 bucket`);
+    } catch (err: any) {
+      console.error("Cloudflare R2 delete operation failed:", err.message);
+      pushLog("error", "storage", `Cloudflare R2 failed to delete physical file [${target.path}]: ${err.message}`);
+    }
+  }
 
   dbData.files = dbData.files.filter(f => f.id !== id);
   pushLog("warn", "storage", `Deleted files reference from bucket: [${target.path}]`);

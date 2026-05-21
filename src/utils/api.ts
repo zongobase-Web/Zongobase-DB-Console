@@ -1,8 +1,10 @@
+/// <reference types="vite/client" />
+
 /**
  * ZongoBase Dynamic API Routing & Integration Coordinator
  */
 
-const DEFAULT_DEV_BACKEND = "https://ais-pre-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app";
+const DEFAULT_DEV_BACKEND = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || "https://ais-pre-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app";
 
 export function isExternalHost(): boolean {
   const hn = window.location.hostname;

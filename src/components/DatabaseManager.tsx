@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Collection, DatabaseDoc } from '../types';
+import { getApiUrl } from '../utils/api';
 import { Database, Plus, Trash2, ArrowRightLeft, Cpu, Sparkles, Code, Table, HelpCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -117,7 +118,7 @@ export default function DatabaseManager({
     setDocError('');
     setAiResult(null);
     try {
-      const response = await fetch('/api/zongobase/ai/generate', {
+      const response = await fetch(getApiUrl('/api/zongobase/ai/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'schema', prompt: aiPrompt })
