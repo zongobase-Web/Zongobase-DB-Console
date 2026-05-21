@@ -245,11 +245,50 @@ try {
     fbApp = initializeApp(firebaseConfig);
     db = getFirestore(fbApp, firebaseConfig.firestoreDatabaseId);
     console.log("Firebase initialized successfully on Server with databaseId:", firebaseConfig.firestoreDatabaseId);
+    
+    // Auto-register default admin & dev roles in real Firebase Auth database programmatically
+    autoRegisterFirebaseUsers(firebaseConfig);
   } else {
     console.log("No config file firebase-applet-config.json found at startup. Running in Local Memory fallback.");
   }
 } catch (err: any) {
   console.error("Firebase startup initialization warning:", err.message);
+}
+
+async function autoRegisterFirebaseUsers(config: any) {
+  if (!config || !config.apiKey) return;
+  const url = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${config.apiKey}`;
+  const accounts = [
+    { email: "admin@zongobase.com", password: "admin*", displayName: "Admin Panel Master" },
+    { email: "dev@zongobase.com", password: "dev*", displayName: "Developer Core Client" }
+  ];
+
+  for (const acc of accounts) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: acc.email,
+          password: acc.password,
+          displayName: acc.displayName,
+          returnSecureToken: true
+        })
+      });
+      if (res.ok) {
+        console.log(`[Firebase Auth Auto-Register] Successfully registered federated account in Firebase: ${acc.email}`);
+      } else {
+        const errData: any = await res.json().catch(() => ({}));
+        if (errData?.error?.message === "EMAIL_EXISTS") {
+          console.log(`[Firebase Auth Auto-Register] Account ${acc.email} is already registered in Firebase project.`);
+        } else {
+          console.warn(`[Firebase Auth Auto-Register] Registration warning for ${acc.email}:`, errData?.error?.message || "Unknown error");
+        }
+      }
+    } catch (err: any) {
+      console.error(`[Firebase Auth Auto-Register] HTTP request failed for ${acc.email}:`, err.message);
+    }
+  }
 }
 
 const SYSTEM_DOC_PATH = "zongobase_system";

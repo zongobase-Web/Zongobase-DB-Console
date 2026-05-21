@@ -152,25 +152,57 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
     const cleanEmail = email.toLowerCase().trim();
     const isDefaultAcc = cleanEmail === "admin@zongobase.com" || cleanEmail === "dev@zongobase.com";
 
-    // 1. If it is a Default/Seeded account, use local backend pathways directly to bypass active setups
+    // 1. If it is a Default/Seeded account, attempt real Firebase Authenticator login first and fall back to seed database pathways
     if (isDefaultAcc) {
       try {
-        const res = await fetch(getApiUrl("/api/zongobase/auth/login"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: cleanEmail, password }),
-        });
+        try {
+          // Attempt authenticating with real client-side Firebase Auth SDK
+          const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+          const firebaseUser = userCredential.user;
 
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data.error || "Local seed authentication failed.");
-        }
+          // Sync verified credentials session with Backend
+          const syncRes = await fetch(getApiUrl("/api/zongobase/auth/firebase-sync"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName || firebaseUser.email?.split("@")[0],
+              method: "email_password"
+            })
+          });
 
-        if (data.user) {
-          if (isAdminPortal && data.user.role !== "admin") {
+          if (!syncRes.ok) {
+            const syncData = await syncRes.json();
+            throw new Error(syncData.error || "Identity keys approved but local server database rejected signature.");
+          }
+
+          const syncData = await syncRes.json();
+          if (isAdminPortal && syncData.user.role !== "admin") {
             throw new Error("Privilege Validation Failed: Account fails Root Admin security checks.");
           }
-          onLoginSuccess(data.user);
+          onLoginSuccess(syncData.user);
+          return;
+        } catch (firebaseErr: any) {
+          console.warn("Real Firebase auth rejected or unconfigured. Proceeding with seed database server-side validation fallback...", firebaseErr.message);
+
+          const res = await fetch(getApiUrl("/api/zongobase/auth/login"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: cleanEmail, password }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || "Local seed authentication failed.");
+          }
+
+          if (data.user) {
+            if (isAdminPortal && data.user.role !== "admin") {
+              throw new Error("Privilege Validation Failed: Account fails Root Admin security checks.");
+            }
+            onLoginSuccess(data.user);
+            return;
+          }
         }
       } catch (err: any) {
         setErrorMsg(err.message || "Local sign in failed.");
