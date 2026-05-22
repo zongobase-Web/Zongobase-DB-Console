@@ -15,11 +15,22 @@ app.use(express.json());
 
 // Enable native CORS configuration for cross-origin Netlify / local deployments
 app.use((req, res, next) => {
-  const origin = req.headers.origin || "*";
-  res.setHeader("Access-Control-Allow-Origin", origin);
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  } else {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+  }
+  
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-zongobase-user-id, x-zongobase-api-key, x-requested-with");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
+  
+  const requestedHeaders = req.headers["access-control-request-headers"];
+  if (requestedHeaders) {
+    res.setHeader("Access-Control-Allow-Headers", requestedHeaders);
+  } else {
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-zongobase-user-id, x-zongobase-api-key, x-requested-with, cache-control, pragma, accept, origin");
+  }
   
   if (req.method === "OPTIONS") {
     res.sendStatus(200);

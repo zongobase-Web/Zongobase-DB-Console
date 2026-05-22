@@ -587,22 +587,22 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
             </form>
               
               {/* Active Backend Connection Tray */}
-              <div className="mt-4 p-3 rounded-xl bg-[#131416]/90 border border-[#2d2f31] space-y-2.5 text-left">
+              <div className="mt-4 p-3 rounded-xl bg-[#131416]/95 border border-[#2d2f31] space-y-2.5 text-left">
                 <div className="flex justify-between items-center text-[10px] font-mono">
                   <span className="text-slate-400 flex items-center gap-1.5 uppercase font-semibold">
-                    <Terminal className="w-3 h-3 text-indigo-400" />
+                    <Terminal className="w-3 h-3 text-indigo-400 animate-pulse" />
                     <span>ZongoBase Active Gateway</span>
                   </span>
                   <div className="flex items-center gap-1.5 font-sans">
                     <span className={`w-1.5 h-1.5 rounded-full ${
                       apiConnectionStatus === 'connected' ? 'bg-emerald-500 animate-pulse' :
-                      apiConnectionStatus === 'checking' ? 'bg-violet-400 animate-pulse' :
-                      apiConnectionStatus === 'failed' ? 'bg-rose-500' : 'bg-slate-500'
+                      apiConnectionStatus === 'checking' ? 'bg-indigo-400 animate-pulse' :
+                      apiConnectionStatus === 'failed' ? 'bg-rose-500 animate-ping' : 'bg-slate-500'
                     }`} />
                     <span className={`text-[9px] uppercase font-bold tracking-wider ${
-                      apiConnectionStatus === 'connected' ? 'text-emerald-400' :
-                      apiConnectionStatus === 'checking' ? 'text-violet-400' :
-                      apiConnectionStatus === 'failed' ? 'text-rose-450 font-semibold' : 'text-slate-400'
+                      apiConnectionStatus === 'connected' ? 'text-emerald-400 font-extrabold' :
+                      apiConnectionStatus === 'checking' ? 'text-indigo-400' :
+                      apiConnectionStatus === 'failed' ? 'text-rose-450 font-extrabold' : 'text-slate-400'
                     }`}>
                       {apiConnectionStatus === 'connected' ? 'ONLINE' :
                        apiConnectionStatus === 'checking' ? 'TESTING...' :
@@ -619,11 +619,64 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
                 </div>
 
                 <div className="text-[10px] font-mono text-slate-500 break-all bg-black/40 p-2 rounded border border-[#2d2f31] flex items-center justify-between gap-1 select-all">
-                  <span className="text-slate-300 font-sans font-bold bg-[#1e1f20] px-1.5 py-0.5 rounded text-[8px] border border-slate-750 text-[#8ab4f8] shrink-0 uppercase">
+                  <span className="text-slate-300 font-sans font-bold bg-[#1e1f20] px-1.5 py-0.5 rounded text-[8px] border border-slate-755 text-[#8ab4f8] shrink-0 uppercase">
                     {isExternalHost() ? "NETLIFY MODE" : "SANDBOX MODE"}
                   </span>
-                  <span className="truncate flex-1 text-right font-mono text-[10px] text-slate-400 font-medium">{getBackendOrigin()}</span>
+                  <span className="truncate flex-1 text-right font-mono text-[10px] text-slate-400 font-semibold">{getBackendOrigin()}</span>
                 </div>
+
+                {/* Intelligent Dynamic Diagnostician for Netlify and Outside CORS deployments */}
+                {apiConnectionStatus === 'failed' && (
+                  <div className="p-3 bg-gradient-to-tr from-rose-500/10 to-transparent border border-rose-500/20 rounded-lg space-y-2 mt-2">
+                    <p className="text-[11px] font-semibold text-rose-300 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Netlify Decoupled CORS Block Detected</span>
+                    </p>
+                    <p className="text-[10px] text-slate-400 leading-normal font-sans">
+                      Your browser is blocking requests from Netlify to your backend sandbox due to lack of proxy cookies in this context, or your target origin is offline.
+                    </p>
+                    
+                    <div className="space-y-1 bg-black/50 p-2 rounded border border-rose-950/35">
+                      <p className="text-[9px] font-mono uppercase tracking-widest text-[#8ab4f8] font-bold">Recommended Handshake Paths:</p>
+                      
+                      <div className="space-y-1.5 pt-1 text-[10px] font-mono">
+                        <div className="flex justify-between items-center bg-slate-900/60 p-1 px-1.5 rounded border border-slate-800/80">
+                          <span className="text-slate-400">Development Environment:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const devUrl = "https://ais-dev-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app";
+                              setCustomApiUrlInput(devUrl);
+                              setCustomApiUrl(devUrl);
+                            }}
+                            className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 px-1 rounded text-[8.5px] font-semibold cursor-pointer border border-emerald-500/20"
+                            title="Click to instantly set to live active Dev server"
+                          >
+                            Set to Live Dev
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-slate-500 truncate hover:text-slate-400">https://ais-dev-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app</p>
+
+                        <div className="flex justify-between items-center bg-slate-900/60 p-1 px-1.5 rounded border border-slate-800/80 mt-1">
+                          <span className="text-slate-400">Production Preview:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const preUrl = "https://ais-pre-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app";
+                              setCustomApiUrlInput(preUrl);
+                              setCustomApiUrl(preUrl);
+                            }}
+                            className="bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 px-1 rounded text-[8.5px] font-semibold cursor-pointer border border-indigo-500/20"
+                            title="Click to set to Shared Pre-release server"
+                          >
+                            Set to Shared App
+                          </button>
+                        </div>
+                        <p className="text-[9px] text-slate-500 truncate hover:text-slate-400">https://ais-pre-trhdk5umowo6g37aif6i3z-475148401766.europe-west1.run.app</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {showApiSettings && (
                   <motion.div 
@@ -647,7 +700,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
                         onClick={() => {
                           setCustomApiUrl(customApiUrlInput || null);
                         }}
-                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[9px] px-2.5 py-1.5 rounded cursor-pointer font-mono uppercase shrink-0"
+                        className="bg-[#8ab4f8] hover:bg-[#a1c5ff] text-slate-950 font-extrabold text-[9px] px-2.5 py-1.5 rounded cursor-pointer font-mono uppercase shrink-0"
                       >
                         SET & RELOAD
                       </button>
@@ -660,7 +713,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
                             setCustomApiUrl(null);
                             setCustomApiUrlInput(getBackendOrigin());
                           }}
-                          className="text-[9px] text-slate-500 hover:text-slate-300 underline font-mono"
+                          className="text-[9px] text-slate-500 hover:text-slate-300 underline font-mono cursor-pointer"
                         >
                           RESTORE SYSTEM DEFAULT URL
                         </button>
