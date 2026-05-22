@@ -18,7 +18,7 @@ app.use((req, res, next) => {
   const origin = req.headers.origin || "*";
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-zongobase-user-id, x-requested-with");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-zongobase-user-id, x-zongobase-api-key, x-requested-with");
   res.setHeader("Access-Control-Allow-Credentials", "true");
   
   if (req.method === "OPTIONS") {
@@ -369,8 +369,32 @@ async function saveStateToFirestore() {
 let sseClients: any[] = [];
 
 function emitSync(event: string, data: any) {
-  sseClients.forEach(client => {
-    client.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  sseClients.forEach((client: any) => {
+    const sseAdmin = client.isAdmin === true;
+    const userId = client.userId;
+    let filteredData = data;
+
+    // Filter data per connection for security
+    if (!sseAdmin) {
+      if (event === "users:updated") {
+        filteredData = Array.isArray(data) ? data.filter((u: any) => u.id === userId) : [];
+      } else if (event === "collections:updated") {
+        filteredData = Array.isArray(data) ? data.filter((c: any) => c.ownerId === userId) : [];
+      } else if (event === "projects:updated") {
+        filteredData = Array.isArray(data) ? data.filter((p: any) => p.ownerId === userId) : [];
+      } else if (event === "files:updated") {
+        filteredData = Array.isArray(data) ? data.filter((f: any) => !f.id.startsWith("admin")) : [];
+      } else if (event === "functions:updated" || event === "apikeys:updated") {
+        filteredData = [];
+      } else if (event === "messages:updated") {
+        const userEmail = dbData.users.find(u => u.id === userId)?.email || "";
+        filteredData = Array.isArray(data) ? data.filter((m: any) => m.senderEmail === userEmail) : [];
+      } else if (event === "log") {
+        return; // Skip logs for standard accounts
+      }
+    }
+
+    client.write(`event: ${event}\ndata: ${JSON.stringify(filteredData)}\n\n`);
   });
   markDirty();
 }
@@ -463,16 +487,31 @@ app.get("/api/zongobase/db/sync", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   
-  res.write(`event: init\ndata: ${JSON.stringify({
-    collections: dbData.collections,
-    users: dbData.users,
-    projects: dbData.projects,
-    files: dbData.files,
-    functions: dbData.functions,
-    apiKeys: dbData.apiKeys,
-    logs: dbData.logs,
-    messages: dbData.messages
-  })}\n\n`);
+  const userId = req.query.userId || req.headers["x-zongobase-user-id"];
+  let reqUser: AuthUser | null = null;
+  if (userId) {
+    reqUser = dbData.users.find(u => u.id === String(userId)) || null;
+  }
+  
+  const sseAdmin = reqUser ? reqUser.role === "admin" : false;
+
+  // Track on client response context for reactive broadcasts
+  const clientRes = res as any;
+  clientRes.userId = userId ? String(userId) : "";
+  clientRes.isAdmin = sseAdmin;
+  
+  const dataPayload = {
+    collections: sseAdmin ? dbData.collections : (reqUser ? dbData.collections.filter(c => c.ownerId === reqUser!.id) : []),
+    users: sseAdmin ? dbData.users : (reqUser ? dbData.users.filter(u => u.id === reqUser!.id) : []),
+    projects: sseAdmin ? dbData.projects : (reqUser ? dbData.projects.filter(p => p.ownerId === reqUser!.id) : []),
+    files: sseAdmin ? dbData.files : (reqUser ? dbData.files.filter(f => !f.id.startsWith("admin")) : []),
+    functions: sseAdmin ? dbData.functions : [],
+    apiKeys: sseAdmin ? dbData.apiKeys : [],
+    logs: sseAdmin ? dbData.logs : [],
+    messages: sseAdmin ? dbData.messages : (reqUser ? dbData.messages.filter(m => m.senderEmail === reqUser!.email) : [])
+  };
+
+  res.write(`event: init\ndata: ${JSON.stringify(dataPayload)}\n\n`);
 
   sseClients.push(res);
   pushLog("info", "gateway", `Client linked real-time synchronization loop. Consumers counter: ${sseClients.length}`);
@@ -513,6 +552,9 @@ app.post("/api/zongobase/auth/login", (req, res) => {
   if (user.status === "suspended") {
     return res.status(403).json({ error: "Access Denied: This developer portal footprint is suspended." });
   }
+  if (user.status === "pending") {
+    return res.status(403).json({ error: "Approval Pending: Your account registration is pending review. Once the ZongoBase administrator approves your developer footprint, you can access your space." });
+  }
   let isPasswordValid = user.password === password;
   if (!isPasswordValid) {
     if (user.email === "admin@zongobase.com" && (password === "admin" || password === "admin*")) {
@@ -525,16 +567,18 @@ app.post("/api/zongobase/auth/login", (req, res) => {
     return res.status(401).json({ error: "Audit Failed: Password authentication failed." });
   }
 
-  // Enforce verification codes for anyone except default seeded users
+  // Enforce verification codes for anyone except default seeded users if a code was explicitly issued
   const isDefaultAcc = user.email === "admin@zongobase.com" || user.email === "dev@zongobase.com";
   if (!isDefaultAcc) {
     const cleanEmail = email.toLowerCase().trim();
     const storedCode = verificationCodes[cleanEmail];
-    if (!verificationCode || verificationCode !== storedCode) {
-      return res.status(401).json({ error: "Verification Failed: Invalid or expired email verification code." });
+    if (storedCode) {
+      if (!verificationCode || verificationCode !== storedCode) {
+        return res.status(401).json({ error: "Verification Failed: Invalid or expired email verification code." });
+      }
+      // Code exhausted
+      delete verificationCodes[cleanEmail];
     }
-    // Code exhausted
-    delete verificationCodes[cleanEmail];
   }
   
   user.lastSignIn = new Date().toISOString();
@@ -543,7 +587,7 @@ app.post("/api/zongobase/auth/login", (req, res) => {
 });
 
 app.post("/api/zongobase/auth/register", (req, res) => {
-  const { email, password, displayName, verificationCode } = req.body;
+  const { email, password, displayName } = req.body;
   if (!email || !password || !displayName) {
     return res.status(400).json({ error: "Required registry parameters (email, password, displayName) are missing." });
   }
@@ -552,13 +596,6 @@ app.post("/api/zongobase/auth/register", (req, res) => {
   if (dbData.users.some(u => u.email.toLowerCase() === normalized)) {
     return res.status(400).json({ error: "Conflict Rejected: Email address already registered." });
   }
-
-  // Validate verification code
-  const storedCode = verificationCodes[normalized];
-  if (!verificationCode || verificationCode !== storedCode) {
-    return res.status(401).json({ error: "Verification Failed: Please request and enter the 6-digit verification code sent to your email." });
-  }
-  delete verificationCodes[normalized];
   
   const newUser: AuthUser = {
     id: `u_${Math.random().toString(36).substring(2, 9)}`,
@@ -566,11 +603,32 @@ app.post("/api/zongobase/auth/register", (req, res) => {
     password,
     displayName: displayName.trim(),
     role: "user",
-    status: "active",
+    status: "pending", // Newly registered users are pending admin approval
     lastSignIn: new Date().toISOString()
   };
   
   dbData.users.push(newUser);
+
+  // Push an interactive alert message ticket for the admin console
+  const systemAlertMessage: DevMessage = {
+    id: `msg_auto_${Date.now()}_register`,
+    senderEmail: "gatekeeper@zongobase.com",
+    senderName: "ZongoBase Keeper Protocol",
+    subject: "Action Required: New Registrant Pending Approval!",
+    text: `A new client footprint has registered on your workspace node.\n\n` + 
+          `- Designated Name: ${newUser.displayName}\n` + 
+          `- Email Address: ${newUser.email}\n` + 
+          `- Auth Method: Standalone Direct REST\n` + 
+          `- Registered On: ${new Date().toLocaleString()}\n\n` + 
+          `Approval Requirements:\n` + 
+          `1. Review their credentials and domain permission profiles.\n` + 
+          `2. Open the "Users Manager" tab in your Admin Console Dashboard.\n` + 
+          `3. Under their record, click "Toggle status" to change their status to "active" to instantly provision their developer sandbox.\n\n` + 
+          `This notification was dispatched automatically.`,
+    createdAt: new Date().toISOString()
+  };
+  dbData.messages.push(systemAlertMessage);
+  emitSync("messages:updated", dbData.messages);
   
   // Auto-generate starter projects
   const entropy = Math.random().toString(36).substring(2, 7);
@@ -686,10 +744,31 @@ app.post("/api/zongobase/auth/firebase-sync", (req, res) => {
       password: `secure_federated_${Math.random().toString(36).substring(2, 10)}`,
       displayName: displayName || email.split("@")[0],
       role: "user",
-      status: "active",
+      status: "pending", // Newly initialized synced accounts are pending admin approval
       lastSignIn: new Date().toISOString()
     };
     dbData.users.push(user);
+
+    // Push an interactive alert message ticket for the admin console
+    const systemAlertMessage: DevMessage = {
+      id: `msg_auto_${Date.now()}_sync`,
+      senderEmail: "gatekeeper@zongobase.com",
+      senderName: "ZongoBase Keeper Protocol",
+      subject: "Action Required: New Registrant Pending Approval!",
+      text: `A new client footprint has synced on your workspace node via Federated Tunnel.\n\n` + 
+            `- Designated Name: ${user.displayName}\n` + 
+            `- Email Address: ${user.email}\n` + 
+            `- Auth Method: ${method || "Federated Sync"}\n` + 
+            `- Registered On: ${new Date().toLocaleString()}\n\n` + 
+            `Approval Requirements:\n` + 
+            `1. Review their credentials and domain permission profiles.\n` + 
+            `2. Open the "Users Manager" tab in your Admin Console Dashboard.\n` + 
+            `3. Under their record, click "Toggle status" to change their status to "active" to instantly provision their developer sandbox.\n\n` + 
+            `This notification was dispatched automatically.`,
+      createdAt: new Date().toISOString()
+    };
+    dbData.messages.push(systemAlertMessage);
+    emitSync("messages:updated", dbData.messages);
     
     // Auto-generate starter projects
     const entropy = Math.random().toString(36).substring(2, 7);
@@ -721,16 +800,20 @@ app.post("/api/zongobase/auth/firebase-sync", (req, res) => {
       indexes: ["id"],
       ownerId: user.id
     });
+    dbData.collections[dbData.collections.length - 1].ownerId = user.id;
     emitSync("collections:updated", dbData.collections);
   } else {
-    // If user's account is suspended, reject!
+    // If user's account is suspended or pending, block!
     if (user.status === "suspended") {
       return res.status(403).json({ error: "Access Denied: This developer portal footprint is suspended." });
+    }
+    if (user.status === "pending") {
+      return res.status(403).json({ error: "Approval Pending: Your developer account registration is awaiting administrator review." });
     }
     user.lastSignIn = new Date().toISOString();
   }
   
-  pushLog("success", "auth", `Successful Sovereign Sync [${method || 'email'}] for [${user.displayName}]`);
+  pushLog("success", "auth", `Successful Registry Sync [${method || 'email'}] for [${user.displayName}]`);
   res.json({ success: true, user });
 });
 
@@ -1059,10 +1142,22 @@ app.post("/api/zongobase/db/collections/:name/indexes", (req, res) => {
 
 // Authentication Admin APIs
 app.get("/api/zongobase/auth", (req, res) => {
+  const reqUser = getRequestUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    if (reqUser) {
+      return res.json({ users: [reqUser] }); // standard users only see themselves
+    }
+    return res.status(403).json({ error: "Access Denied: Only Admins can inspect the user pool." });
+  }
   res.json({ users: dbData.users });
 });
 
 app.post("/api/zongobase/auth/users", (req, res) => {
+  const reqUser = getRequestUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ error: "Access Denied: Only root admins can register users." });
+  }
+
   const { email, displayName, role } = req.body;
   if (!email || !displayName) {
     return res.status(400).json({ error: "Email and Display Name are required." });
@@ -1088,6 +1183,11 @@ app.post("/api/zongobase/auth/users", (req, res) => {
 });
 
 app.put("/api/zongobase/auth/users/:id/status", (req, res) => {
+  const reqUser = getRequestUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ error: "Access Denied: Only root admins can update status." });
+  }
+
   const id = req.params.id;
   const user = dbData.users.find(u => u.id === id);
   if (!user) return res.status(404).json({ error: "User not found" });
@@ -1103,6 +1203,11 @@ app.put("/api/zongobase/auth/users/:id/status", (req, res) => {
 });
 
 app.delete("/api/zongobase/auth/users/:id", (req, res) => {
+  const reqUser = getRequestUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ error: "Access Denied: Only root admins can delete users." });
+  }
+
   const id = req.params.id;
   const beforeLength = dbData.users.length;
   dbData.users = dbData.users.filter(u => u.id !== id);
@@ -1199,6 +1304,11 @@ app.get("/api/zongobase/storage/raw/:id", async (req, res) => {
 
 // Cloudflare R2 Live Connection Diagnostics & Status Tracker
 app.get("/api/zongobase/storage/config", (req, res) => {
+  const reqUser = getRequestUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ error: "Access Denied: Administrative credentials required to access system storage drivers." });
+  }
+
   const accountId = process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || dbData.r2Config?.accountId || "";
   const accessKeyId = process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || dbData.r2Config?.accessKeyId || "";
   const rawSecret = process.env.R2_SECRET_ACCESS_KEY || process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || dbData.r2Config?.secretAccessKey || "";
@@ -1221,6 +1331,11 @@ app.get("/api/zongobase/storage/config", (req, res) => {
 });
 
 app.post("/api/zongobase/storage/config", (req, res) => {
+  const reqUser = getRequestUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ error: "Access Denied: Administrative credentials required to configure system storage drivers." });
+  }
+
   const { accountId, accessKeyId, secretAccessKey, bucketName, publicUrl, useR2 } = req.body;
   
   const isEnvSet = !!(process.env.R2_ACCOUNT_ID || process.env.CLOUDFLARE_R2_ACCOUNT_ID || process.env.R2_ACCESS_KEY_ID || process.env.CLOUDFLARE_R2_ACCESS_KEY_ID);
@@ -1250,6 +1365,11 @@ app.post("/api/zongobase/storage/config", (req, res) => {
 });
 
 app.post("/api/zongobase/storage/config/test", async (req, res) => {
+  const reqUser = getRequestUser(req);
+  if (!reqUser || reqUser.role !== "admin") {
+    return res.status(403).json({ error: "Access Denied: Administrative credentials required to test system storage drivers." });
+  }
+
   const { accountId, accessKeyId, secretAccessKey, bucketName } = req.body;
   
   let finalSecret = secretAccessKey;
@@ -1503,7 +1623,17 @@ app.delete("/api/zongobase/apikeys/:id", (req, res) => {
 
 // ZongoBase Dev Feedback Messages Routes
 app.get("/api/zongobase/messages", (req, res) => {
-  res.json({ messages: dbData.messages });
+  const user = getRequestUser(req);
+  if (!user) {
+    return res.status(401).json({ error: "Access Denied: Session login trace not resolved." });
+  }
+  if (user.role === "admin") {
+    res.json({ messages: dbData.messages });
+  } else {
+    // Standard clients should only view tickets related directly to their email address
+    const filtered = dbData.messages.filter(m => m.senderEmail?.toLowerCase().trim() === user.email.toLowerCase().trim());
+    res.json({ messages: filtered });
+  }
 });
 
 app.post("/api/zongobase/messages", (req, res) => {

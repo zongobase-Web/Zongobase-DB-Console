@@ -12,7 +12,7 @@ import {
 } from "firebase/auth";
 import { getApiUrl, getBackendOrigin, setCustomApiUrl, isExternalHost } from "../utils/api";
 
-// Real Sovereign Config credentials provided by user
+// Real Firebase Config credentials provided by user
 const firebaseConfig = {
   apiKey: "AIzaSyALETF5PS0P-LqaolybmjFPmTq-0T5herM",
   authDomain: "zongobase-83236.firebaseapp.com",
@@ -142,7 +142,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
     }
   };
 
-  // Handles either Local seed fallback OR real Federated authentication
+  // Handles unified, cross-origin robust DB REST Authentication
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -150,134 +150,64 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
     setIsLoading(true);
 
     const cleanEmail = email.toLowerCase().trim();
-    const isDefaultAcc = cleanEmail === "admin@zongobase.com" || cleanEmail === "dev@zongobase.com";
 
-    // 1. If it is a Default/Seeded account, attempt real Firebase Authenticator login first and fall back to seed database pathways
-    if (isDefaultAcc) {
-      try {
-        try {
-          // Attempt authenticating with real client-side Firebase Auth SDK
-          const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
-          const firebaseUser = userCredential.user;
-
-          // Sync verified credentials session with Backend
-          const syncRes = await fetch(getApiUrl("/api/zongobase/auth/firebase-sync"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName || firebaseUser.email?.split("@")[0],
-              method: "email_password"
-            })
-          });
-
-          if (!syncRes.ok) {
-            const syncData = await syncRes.json();
-            throw new Error(syncData.error || "Identity keys approved but local server database rejected signature.");
-          }
-
-          const syncData = await syncRes.json();
-          if (isAdminPortal && syncData.user.role !== "admin") {
-            throw new Error("Privilege Validation Failed: Account fails Root Admin security checks.");
-          }
-          onLoginSuccess(syncData.user);
-          return;
-        } catch (firebaseErr: any) {
-          console.warn("Real Firebase auth rejected or unconfigured. Proceeding with seed database server-side validation fallback...", firebaseErr.message);
-
-          const res = await fetch(getApiUrl("/api/zongobase/auth/login"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: cleanEmail, password }),
-          });
-
-          const data = await res.json();
-          if (!res.ok) {
-            throw new Error(data.error || "Local seed authentication failed.");
-          }
-
-          if (data.user) {
-            if (isAdminPortal && data.user.role !== "admin") {
-              throw new Error("Privilege Validation Failed: Account fails Root Admin security checks.");
-            }
-            onLoginSuccess(data.user);
-            return;
-          }
-        }
-      } catch (err: any) {
-        setErrorMsg(err.message || "Local sign in failed.");
-      } finally {
-        setIsLoading(false);
-      }
-      return;
-    }
-
-    // 2. Real Sovereign Federated Auth Flow for custom user credentials
     try {
       if (isRegister) {
-        // Sign up with Secure Tunnel
-        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-        const firebaseUser = userCredential.user;
-        
-        // Update user profile screen designation
-        await updateProfile(firebaseUser, {
-          displayName: displayName.trim() || cleanEmail.split("@")[0]
-        });
-
-        // Sync with our Express backend and initialize personal collection workspaces
-        const syncRes = await fetch(getApiUrl("/api/zongobase/auth/firebase-sync"), {
+        // Direct REST Register call (no client-side Firebase Auth dependencies)
+        const res = await fetch(getApiUrl("/api/zongobase/auth/register"), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json"
+          },
           body: JSON.stringify({
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            method: "email_password"
+            email: cleanEmail,
+            password,
+            displayName: displayName.trim() || cleanEmail.split("@")[0]
           })
         });
 
-        if (!syncRes.ok) {
-          const syncData = await syncRes.json();
-          throw new Error(syncData.error || "Sovereign keys registered correctly but local database sync disengaged.");
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Direct registration failed.");
         }
 
-        const syncData = await syncRes.json();
-        onLoginSuccess(syncData.user);
-
+        // Successfully registered users are placed in pending queue
+        setInfoMsg("🎉 Registration Successful! Your developer clearance has been booked. Your account is currently in the administrator's review queue. Please ask the administrator to activate your status in the Users Manager console, after which you can immediately log in.");
+        setIsRegister(false); // Toggle to login tab
+        setPassword(""); // Clear field for stability
       } else {
-        // Sign in with Secure Tunnel
-        const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
-        const firebaseUser = userCredential.user;
-
-        // Sync with local Express backend
-        const syncRes = await fetch(getApiUrl("/api/zongobase/auth/firebase-sync"), {
+        // Direct REST Login call (handles both seeded templates and custom users)
+        const res = await fetch(getApiUrl("/api/zongobase/auth/login"), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json"
+          },
           body: JSON.stringify({
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName || firebaseUser.email?.split("@")[0],
-            method: "email_password"
+            email: cleanEmail,
+            password,
+            verificationCode: verificationCode.trim()
           })
         });
 
-        if (!syncRes.ok) {
-          const syncData = await syncRes.json();
-          throw new Error(syncData.error || "Identity keys approved but local server database rejected signature.");
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Direct REST authentication failed.");
         }
 
-        const syncData = await syncRes.json();
-        onLoginSuccess(syncData.user);
+        if (data.user) {
+          if (isAdminPortal && data.user.role !== "admin") {
+            throw new Error("Privilege Validation Failed: Account fails Root Admin security checks.");
+          }
+          onLoginSuccess(data.user);
+        } else {
+          throw new Error("Invalid response keys received from validation node.");
+        }
       }
     } catch (err: any) {
-      console.error("Secure auth error:", err);
+      console.error("Secure REST auth error:", err);
       let localizedError = err.message;
-      if (err.code === "auth/invalid-credential") {
-        localizedError = "Auth Failed: Invalid credentials entered into database catalog.";
-      } else if (err.code === "auth/email-already-in-use") {
-        localizedError = "Registry Failed: This email has already been registered.";
-      } else if (err.code === "auth/weak-password") {
-        localizedError = "Registry Failed: Cryptographic password is too weak (min 6 characters).";
-      } else if (err.code === "auth/invalid-email") {
-        localizedError = "Invalid email formatting parsed.";
+      if (localizedError?.includes("failed to fetch") || localizedError?.includes("Failed to fetch") || localizedError?.includes("NetworkError")) {
+        localizedError = "Failed to Fetch: Standard cross-origin browser network query to the proxy server was blocked or timed out. Please check that your Cloud Run backend is online, or click SETTINGS below to override your REST API origin URL manually.";
       }
       setErrorMsg(localizedError || "Credential validation failed.");
     } finally {
@@ -745,7 +675,7 @@ export default function LoginPage({ onLoginSuccess, onBackToHome }: LoginPagePro
             <span>VAULT CIPHER: SHA-256</span>
             <span className="text-[#8ab4f8] flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-[#8ab4f8] animate-pulse" />
-              <span>ACTIVE SOVEREIGN SECURITY TARIFF</span>
+              <span>ACTIVE DATABASE SECURITY TARIFF</span>
             </span>
           </div>
         </div>

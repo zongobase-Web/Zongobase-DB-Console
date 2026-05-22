@@ -58,7 +58,7 @@ export default function HelpWizard() {
     },
     {
       q: "Where is my data hosted?",
-      a: "In our playground console, data resides securely inside in-memory transactional buffers. For your live commercial applications, you can export our standalone, hyper-portable PHP/Node single-file databases directly to your personal GitHub, Netlify, or Apache directories, ensuring 100% data sovereignty and absolute zero cost."
+      a: "In our playground console, data resides securely inside in-memory transactional buffers. For your live commercial applications, you can export our standalone, hyper-portable PHP/Node single-file databases directly to your personal GitHub, Netlify, or Apache directories, ensuring 100% data ownership and absolute zero cost."
     },
     {
       q: "Is there support for standard SQL database tables or strict schemas?",
@@ -89,7 +89,7 @@ export default function HelpWizard() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to post message to sovereign channels.");
+        throw new Error("Failed to post message to integration channels.");
       }
 
       setSubmitSuccess(true);
@@ -116,7 +116,7 @@ export default function HelpWizard() {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-widest">Sovereign Guided Integration Hub</span>
+              <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-widest">Guided Integration Hub</span>
             </div>
             <h1 className="text-xl font-sans font-extrabold text-[#f0f4f9] tracking-tight">
               Breezy Database Setup & Support Center
@@ -251,7 +251,7 @@ export default function HelpWizard() {
             
             <h3 className="text-sm font-bold text-white">About the ZongoBase Startup</h3>
             <p className="text-xs text-slate-400 leading-relaxed font-sans">
-              ZongoBase is an ambitious, high-performance database service startup created with the mission to build the fastest, most secure, and completely data-sovereign NoSQL playground platform. 
+              ZongoBase is an ambitious, high-performance database service startup created with the mission to build the fastest, most secure, and completely private NoSQL playground platform. 
             </p>
             <p className="text-xs text-slate-400 leading-relaxed font-sans">
               As a lightweight startup, we emphasize simplicity, clean code, cost-free Standalone server deployments, and instant integration tunnels to stand tall alongside industry giants. We would love to hear your questions, feature proposals, and commercial collaborations!

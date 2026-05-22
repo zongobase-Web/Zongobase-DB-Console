@@ -53,7 +53,7 @@ export default function AuthManager({
         <div>
           <h2 className="text-lg font-bold text-white font-sans flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-indigo-400" />
-            <span>Nexus Auth Manager Services</span>
+            <span>ZongoBase Auth Manager Services</span>
           </h2>
           <p className="text-xs text-slate-400 leading-relaxed mt-1 max-w-2xl">
             Control application-level security, track historic sign-ins, and provision development tokens for secure JWT validations.
@@ -215,6 +215,11 @@ export default function AuthManager({
                             <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
                             <span className="text-xs text-emerald-400 font-semibold font-mono uppercase">Active</span>
                           </>
+                        ) : user.status === 'pending' ? (
+                          <>
+                            <HelpCircle className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                            <span className="text-xs text-amber-500 font-semibold font-mono uppercase">Pending Approval</span>
+                          </>
                         ) : (
                           <>
                             <Ban className="w-3.5 h-3.5 text-rose-400" />
@@ -231,14 +236,21 @@ export default function AuthManager({
                       {user.status === 'active' ? (
                         <button
                           onClick={() => onUpdateUserStatus(user.id, 'suspended')}
-                          className="px-2.5 py-1 text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/20 rounded"
+                          className="px-2.5 py-1 text-[10px] font-mono bg-slate-900 border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/20 rounded cursor-pointer"
                         >
                           Suspend
+                        </button>
+                      ) : user.status === 'pending' ? (
+                        <button
+                          onClick={() => onUpdateUserStatus(user.id, 'active')}
+                          className="px-2.5 py-1 text-[10px] font-mono bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 hover:text-indigo-300 hover:bg-[#ffca28]/10 hover:border-[#ffca28]/25 rounded cursor-pointer animate-pulse"
+                        >
+                          Approve Clearance
                         </button>
                       ) : (
                         <button
                           onClick={() => onUpdateUserStatus(user.id, 'active')}
-                          className="px-2.5 py-1 text-[10px] font-mono bg-slate-900 border border-slate-800 text-emerald-400 hover:text-emerald-300 hover:border-emerald-550/25 rounded"
+                          className="px-2.5 py-1 text-[10px] font-mono bg-slate-900 border border-slate-800 text-emerald-400 hover:text-emerald-300 hover:border-emerald-555/25 rounded cursor-pointer"
                         >
                           Restore
                         </button>

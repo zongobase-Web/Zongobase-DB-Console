@@ -11,6 +11,7 @@ import LoginPage from './components/LoginPage';
 import LandingPage from './components/LandingPage';
 import DeveloperProjects from './components/DeveloperProjects';
 import HelpWizard from './components/HelpWizard';
+import OnboardingGuide from './components/OnboardingGuide';
 import { Database, Users, HardDrive, Cpu, KeyRound, Network, Terminal, Settings, Globe, LogOut, Sparkles, ArrowLeft, ArrowRight, Home, ChevronRight, HelpCircle, Compass, BookOpen } from 'lucide-react';
 import { getApiUrl, isExternalHost, getBackendOrigin, setCustomApiUrl } from './utils/api';
 
@@ -19,6 +20,22 @@ export default function App() {
     const stored = localStorage.getItem('zongobase_user');
     return stored ? JSON.parse(stored) : null;
   });
+
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      const hasSeen = localStorage.getItem('zongobase_has_seen_guide_v2');
+      if (!hasSeen) {
+        setShowOnboarding(true);
+      }
+    }
+  }, [currentUser]);
+
+  const handleCloseOnboarding = () => {
+    setShowOnboarding(false);
+    localStorage.setItem('zongobase_has_seen_guide_v2', 'true');
+  };
 
   const [showLogin, setShowLogin] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -68,7 +85,8 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
 
-    let sse: EventSource | null = new EventSource(getApiUrl('/api/zongobase/db/sync'));
+    const sseUrl = getApiUrl(`/api/zongobase/db/sync?userId=${encodeURIComponent(currentUser.id)}`);
+    let sse: EventSource | null = new EventSource(sseUrl);
 
     sse.onopen = () => {
       setIsConnected(true);
@@ -410,7 +428,9 @@ export default function App() {
     ? collections 
     : collections.filter(c => c.ownerId === currentUser?.id);
 
-  const displayedUsers = users;
+  const displayedUsers = isAdmin 
+    ? users 
+    : (currentUser ? [currentUser] : []);
   
   const displayedProjects = isAdmin 
     ? projects 
@@ -468,6 +488,7 @@ export default function App() {
           />
         );
       case 'database':
+        if (!isAdmin) return null;
         return (
           <DatabaseManager
             collections={displayedCollections}
@@ -480,6 +501,7 @@ export default function App() {
           />
         );
       case 'auth':
+        if (!isAdmin) return null;
         return (
           <AuthManager
             users={displayedUsers}
@@ -550,13 +572,9 @@ export default function App() {
         { id: 'help-wizard', label: 'Setup Wizard & FAQs', icon: HelpCircle }
       ]
     : [
-        { id: 'dashboard', label: 'Console Overview', icon: Terminal },
-        { id: 'projects', label: 'Web Projects Linker', icon: Globe },
-        { id: 'database', label: 'My NoSQL Database', icon: Database },
-        { id: 'auth', label: 'Users Manager', icon: Users },
-        { id: 'storage', label: 'Virtual Storage', icon: HardDrive },
-        { id: 'gateway-connect', label: 'Export Code / SDKs', icon: Network },
-        { id: 'help-wizard', label: 'Setup Wizard & FAQs', icon: HelpCircle }
+        { id: 'dashboard', label: 'My Client Account', icon: Terminal },
+        { id: 'storage', label: 'My Cloud Assets', icon: HardDrive },
+        { id: 'help-wizard', label: 'Setup Guide & FAQs', icon: HelpCircle }
       ];
 
   return (
@@ -595,7 +613,7 @@ export default function App() {
             })}
 
             {/* Circular Return to Welcome Homepage link */}
-            <div className="text-[10px] text-slate-500 uppercase tracking-widest px-4 pt-6 mb-2 font-semibold font-mono border-t border-[#2d2f31]/40">Sovereign Portal</div>
+            <div className="text-[10px] text-slate-500 uppercase tracking-widest px-4 pt-6 mb-2 font-semibold font-mono border-t border-[#2d2f31]/40">ZongoBase Portal</div>
             <button
               onClick={() => setViewLanding(true)}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium text-sm transition-all duration-150 text-left select-none cursor-pointer text-slate-400 hover:bg-[#1e1f20] hover:text-[#f0f4f9]"
@@ -665,6 +683,15 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowOnboarding(true)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/25 hover:border-amber-500/40 text-xs font-mono font-semibold transition duration-155 cursor-pointer select-none"
+              title="Open onboarding instruction walkthrough and live connection wizard"
+            >
+              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+              <span className="font-bold">⚡ Quickstart Guide</span>
+            </button>
+
             <div className="flex items-center gap-2 bg-[#1e1f20] px-3.5 py-1.5 rounded-full border border-[#2d2f31]">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
               <span className="text-xs font-mono text-[#f0f4f9] font-semibold truncate max-w-[150px]">
@@ -693,6 +720,13 @@ export default function App() {
           ZONGOBASE ENGINE • ALL DATABASES LOCALIZED & MEMORY PERSISTED • COMPATIBLE WITH GITHUB & NETLIFY STANDALONES
         </footer>
       </main>
+
+      {/* Popover/Walkthrough Modal Guide for First-time Connectors */}
+      <OnboardingGuide 
+        apiKeys={apiKeys} 
+        isOpen={showOnboarding} 
+        onClose={handleCloseOnboarding} 
+      />
     </div>
   );
 }

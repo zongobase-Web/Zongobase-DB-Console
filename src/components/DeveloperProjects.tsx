@@ -223,7 +223,7 @@ export default function DeveloperProjects({
           <div>
             <div className="flex items-center gap-1.5 text-[9px] font-bold text-amber-400 font-mono uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20 w-fit mb-3">
               <Zap className="w-3 h-3 text-amber-500 animate-pulse" />
-              <span>Sovereign Edge Advantage</span>
+              <span>Developer Edge Advantage</span>
             </div>
             <h4 className="text-sm font-bold text-white flex items-center gap-1.5 font-sans">
               <span>Zero-Config secure proxy Setup</span>

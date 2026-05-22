@@ -33,7 +33,7 @@ export interface AuthUser {
   password?: string; // Password support for live logging
   displayName: string;
   role: 'admin' | 'user' | 'anonymous';
-  status: 'active' | 'suspended';
+  status: 'active' | 'suspended' | 'pending';
   lastSignIn: string;
 }
 

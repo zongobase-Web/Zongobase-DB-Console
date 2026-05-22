@@ -25,6 +25,16 @@ export default function StorageManager({
   const [fileMime, setFileMime] = useState('application/json');
   const [selectedViewingFile, setSelectedViewingFile] = useState<StorageFile | null>(null);
 
+  // Check if logged in user is admin
+  const rawUser = localStorage.getItem('zongobase_user');
+  let loggedInUser: any = null;
+  if (rawUser) {
+    try {
+      loggedInUser = JSON.parse(rawUser);
+    } catch (e) { }
+  }
+  const isAdminUser = loggedInUser?.role === 'admin';
+
   // Cloudflare R2 Dynamic Configuration State
   const [r2Config, setR2Config] = useState({
     accountId: '',
@@ -257,7 +267,7 @@ service zongobase.db {
           <div className="space-y-1">
             <h2 className="text-lg font-bold text-white font-sans flex items-center gap-2">
               <HardDrive className="w-5 h-5 text-emerald-400" />
-              <span>Sovereign Storage Buckets</span>
+              <span>S3 & Custom Storage Buckets</span>
             </h2>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <span className={`text-[9.5px] uppercase font-bold px-2 py-0.5 rounded flex items-center gap-1 border ${
@@ -283,17 +293,19 @@ service zongobase.db {
             </div>
           </div>
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowR2Config(!showR2Config)}
-              className={`px-3 py-1.5 border rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                showR2Config 
-                  ? 'bg-slate-850 text-white border-slate-700' 
-                  : 'bg-slate-900/40 text-slate-350 border-slate-800 hover:bg-slate-800'
-              }`}
-            >
-              <Settings className="w-3.5 h-3.5 text-indigo-400" />
-              <span>S3 / R2 Configuration</span>
-            </button>
+            {isAdminUser && (
+              <button
+                onClick={() => setShowR2Config(!showR2Config)}
+                className={`px-3 py-1.5 border rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                  showR2Config 
+                    ? 'bg-slate-850 text-white border-slate-700' 
+                    : 'bg-slate-900/40 text-slate-350 border-slate-800 hover:bg-slate-800'
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5 text-indigo-400" />
+                <span>S3 / R2 Configuration</span>
+              </button>
+            )}
             <button
               onClick={() => setIsAddingFile(!isAddingFile)}
               className="px-3.5 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-semibold hover:bg-emerald-500/15 transition flex items-center gap-1.5 shrink-0 cursor-pointer"

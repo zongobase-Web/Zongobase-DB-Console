@@ -129,7 +129,7 @@ let doc = client.collection("analytics")
           className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-[#1e1f20] border border-[#2d2f31] text-[#8ab4f8] text-xs font-mono font-medium"
         >
           <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
-          <span>The Sovereign Self-Hosted Workspace & NoSQL Datastore Linker</span>
+          <span>The Self-Hosted Workspace & NoSQL Datastore Linker</span>
         </motion.div>
 
         {/* Gemini text-gradient titles */}

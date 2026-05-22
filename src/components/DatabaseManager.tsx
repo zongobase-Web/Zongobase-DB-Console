@@ -254,7 +254,7 @@ export default function DatabaseManager({
             <span>AI Schema Architect</span>
           </h4>
           <p className="text-xs text-slate-400 leading-relaxed mb-3">
-            Describe a collection. Nexus matches field requirements, populates structured dummy JSON nodes via Gemini, and compiles schema fields.
+            Describe a collection. ZongoBase matches field requirements, populates structured dummy JSON nodes via Gemini, and compiles schema fields.
           </p>
 
           <textarea
